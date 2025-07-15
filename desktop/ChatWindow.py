@@ -52,7 +52,7 @@ class ChatWindow(QWidget):
         self.logout_btn = QPushButton("Logout")
         self.logout_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         self.logout_btn.setMinimumHeight(40)
-        self.logout_btn.setStyleSheet("background-color: #F44336; color: white; border-radius: 8px;")
+        self.logout_btn.setStyleSheet("background-color: #0F151B; color: white; border-radius: 8px;")
         left_panel.addWidget(self.logout_btn)
 
         # Main chat area
@@ -165,7 +165,7 @@ class ChatWindow(QWidget):
                 html_block = f"""
                 <div style='text-align: right; color: #ddd; font-family: "Segoe UI", sans-serif;'>
                     <div style='font-size: 11px; color: #888;'>{timestamp} • You</div>
-                    <div style='margin-top: 4px;'>{message_text}</div>
+                    <div style='margin-top: 4px;floot = right;'>{message_text}</div>
                 </div>
                 """
             else:
