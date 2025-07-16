@@ -31,34 +31,22 @@ class ChatWindow(QWidget):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
 
-        # Left panel
-        left_panel = QVBoxLayout()
-        left_panel.setSpacing(10)
-
+        # Sidebar for online users
+        right_panel = QVBoxLayout()
         online_label = QLabel("Online Users")
         online_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         online_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         online_label.setStyleSheet("color: #4CAF50;")
-
         self.online_users_list = QListWidget()
         self.online_users_list.setFixedWidth(220)
         self.online_users_list.setFont(QFont("Arial", 12))
         self.online_users_list.setStyleSheet("border: 1px solid #ddd; border-radius: 5px;")
-
-        left_panel.addWidget(online_label)
-        left_panel.addWidget(self.online_users_list)
-        left_panel.addStretch(1)
-
-        self.logout_btn = QPushButton("Logout")
-        self.logout_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        self.logout_btn.setMinimumHeight(40)
-        self.logout_btn.setStyleSheet("background-color: #0F151B; color: white; border-radius: 8px;")
-        left_panel.addWidget(self.logout_btn)
+        right_panel.addWidget(online_label)
+        right_panel.addWidget(self.online_users_list)
+        right_panel.addStretch(1)
 
         # Main chat area
         chat_layout = QVBoxLayout()
-        chat_layout.setSpacing(8)
-
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
         self.chat_display.setFont(QFont("Consolas", 11))
@@ -71,8 +59,6 @@ class ChatWindow(QWidget):
         """)
 
         input_layout = QHBoxLayout()
-        input_layout.setSpacing(8)
-
         self.message_input = QLineEdit()
         self.message_input.setPlaceholderText("Type your message here...")
         self.message_input.setFont(QFont("Arial", 12))
@@ -84,28 +70,24 @@ class ChatWindow(QWidget):
             background-color: #1e1f23;
             color: #eee;
         """)
-
         self.send_btn = QPushButton("Send")
         self.send_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         self.send_btn.setFixedWidth(120)
         self.send_btn.setMinimumHeight(38)
         self.send_btn.setStyleSheet("background-color: #2196F3; color: white; border-radius: 8px;")
-
         input_layout.addWidget(self.message_input)
         input_layout.addWidget(self.send_btn)
 
         chat_layout.addWidget(self.chat_display)
         chat_layout.addLayout(input_layout)
 
-        main_layout.addLayout(left_panel, stretch=1)
-        main_layout.addLayout(chat_layout, stretch=4)
-
+        main_layout.addLayout(chat_layout, stretch=1)
+        main_layout.addLayout(right_panel, stretch=0)
         self.setLayout(main_layout)
 
         # Connect signals
         self.send_btn.clicked.connect(self.send_message)
         self.message_input.returnPressed.connect(self.send_message)
-        self.logout_btn.clicked.connect(self.handle_logout)
 
     def setup_timers(self):
         self.update_messages_timer = QTimer(self)
@@ -131,62 +113,57 @@ class ChatWindow(QWidget):
     def update_messages(self):
         if self.parent_app.user_id is None:
             return
-        self.messages_thread = NetworkThread.NetworkThread(f"messages?last_id={self.last_message_id}")
+        self.messages_thread = NetworkThread.NetworkThread(
+            f"messages?last_id={self.last_message_id}&limit=50"
+        )
         self.messages_thread.data_received.connect(self.update_messages_display)
         self.messages_thread.error_occurred.connect(lambda e: print(f"Error updating messages: {e}"))
         self.messages_thread.start()
 
     def update_messages_display(self, messages_data):
         if not isinstance(messages_data, list):
-            print(f"Error: update_messages_display received unexpected data type: {type(messages_data)}.")
+            print(f"Expected list, got {type(messages_data)}")
             return
 
         sorted_messages = sorted(messages_data, key=lambda x: x.get('id', 0))
-        cursor = self.chat_display.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-
-        full_html = ""
         max_message_id = self.last_message_id
 
+        scrollbar = self.chat_display.verticalScrollBar()
+        at_bottom = scrollbar.value() >= (scrollbar.maximum() - 30)
+
+        html_content = ""
         for msg in sorted_messages:
             msg_id = msg.get('id')
-            if msg_id is None or msg_id <= self.last_message_id:
+            if not msg_id or msg_id <= self.last_message_id:
                 continue
 
             timestamp = to_tehran_time_persian(msg.get('timestamp', ''))
             sender_name = msg.get('sender', 'Unknown')
-            message_text = html.escape(msg.get('message', '')).replace('\n', '<br>')
-            sender_id = msg.get('sender_id')
+            message_text = html.escape(msg.get('message', ''))
 
-            # مدرن با hr
-            separator_html = "<hr style='border:0; height:1px; background: rgba(255,255,255,0.08); margin:12px 0;'>"
-
-            if sender_id == self.parent_app.user_id:
-                html_block = f"""
-                <div style='text-align: right; color: #ddd; font-family: "Segoe UI", sans-serif;'>
-                    <div style='font-size: 11px; color: #888;'>{timestamp} • You</div>
-                    <div style='margin-top: 4px;floot = right;'>{message_text}</div>
-                </div>
-                """
+            if msg.get('sender_id') == self.parent_app.user_id:
+                line = (f'<div align="right">'
+                        f'<b style="color:#4CAF50;">You:</b> {message_text}'
+                        f'<br><span style="font-size:10px;color:#888;">{timestamp}</span>'
+                        f'</div><hr style="border:none;height:1px;background:#444;">')
             else:
-                html_block = f"""
-                <div style='text-align: left; color: #ddd; font-family: "Segoe UI", sans-serif;'>
-                    <div style='font-size: 11px; color: #888;'>{sender_name} • {timestamp}</div>
-                    <div style='margin-top: 4px;'>{message_text}</div>
-                </div>
-                """
+                line = (f'<div align="left">'
+                        f'<b style="color:#2196F3;">{sender_name}:</b> {message_text}'
+                        f'<br><span style="font-size:10px;color:#888;">{timestamp}</span>'
+                        f'</div><hr style="border:none;height:1px;background:#444;">')
 
-            full_html += separator_html + html_block
+            html_content += line
             max_message_id = max(max_message_id, msg_id)
 
-        if full_html:
-            try:
-                cursor.insertHtml(full_html)
-                scrollbar = self.chat_display.verticalScrollBar()
-                scrollbar.setValue(scrollbar.maximum())
-                self.last_message_id = max_message_id
-            except Exception as e:
-                print(f"Error inserting HTML: {e}")
+        if html_content:
+            self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+            self.chat_display.insertHtml(html_content)
+
+        self.last_message_id = max_message_id
+
+        # smart scroll only if was at bottom
+        if at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
 
     def send_message(self):
         message = self.message_input.text().strip()
@@ -196,8 +173,10 @@ class ChatWindow(QWidget):
             QMessageBox.warning(self, "Error", "Not logged in. Please log in again.")
             self.parent_app.switch_page("login")
             return
+
         self.set_ui_enabled(False)
         self.parent_app.status_bar.showMessage("Sending message...", 0)
+
         self.send_message_thread = NetworkThread.NetworkThread(
             "messages/send",
             {"sender_id": self.parent_app.user_id, "message": message},
@@ -208,7 +187,7 @@ class ChatWindow(QWidget):
         self.send_message_thread.finished.connect(lambda: self.set_ui_enabled(True))
         self.send_message_thread.start()
 
-    def message_sent_success(self, data):
+    def message_sent_success(self, _):
         self.message_input.clear()
         self.message_input.setFocus()
         self.parent_app.status_bar.showMessage("Message sent.", 2000)
@@ -217,7 +196,7 @@ class ChatWindow(QWidget):
     def update_users(self):
         self.users_thread = NetworkThread.NetworkThread("users/online")
         self.users_thread.data_received.connect(self.update_users_list)
-        self.users_thread.error_occurred.connect(lambda e: print(f"Error updating online users: {e}"))
+        self.users_thread.error_occurred.connect(lambda e: print(f"Error updating users: {e}"))
         self.users_thread.start()
 
     def update_users_list(self, users_data):
@@ -232,19 +211,6 @@ class ChatWindow(QWidget):
             "POST"
         )
         self.activity_thread.start()
-
-    def handle_logout(self):
-        if QMessageBox.question(self, "Logout Confirmation",
-                                "Are you sure you want to log out?",
-                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
-            self.stop_timers()
-            self.parent_app.user_id = None
-            self.parent_app.username = None
-            self.last_message_id = 0
-            self.chat_display.clear()
-            self.online_users_list.clear()
-            self.parent_app.status_bar.showMessage("Logged out.", 3000)
-            self.parent_app.switch_page("login")
 
     def show_error(self, message):
         QMessageBox.warning(self, "Network Error", message)
