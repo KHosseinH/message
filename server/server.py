@@ -3,7 +3,6 @@ import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import customtkinter as ctk
-from datetime import datetime, timedelta
 import os
 import sys
 import logging
@@ -35,7 +34,7 @@ app_logger.info("ChatDatabase instance initialized.")
 app = Flask(__name__)
 CORS(app)  # Enable Cross-Origin Resource Sharing
 
-# Flask API endpoints
+# --- API Endpoints ---
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
@@ -74,7 +73,8 @@ def api_get_online_users():
 
 @app.route("/api/users/activity", methods=["POST"])
 def api_update_user_activity():
-    user_id = request.json.get('user_id')
+    data = request.get_json(force=True, silent=True) or {}
+    user_id = data.get('user_id')
     if not user_id:
         return jsonify({"message": "User ID is required"}), 400
     try:
@@ -88,9 +88,10 @@ def api_update_user_activity():
 
 @app.route("/api/register", methods=["POST"])
 def api_register_user():
-    username = request.json.get('username')
-    password = request.json.get('password')
-    email = request.json.get('email')
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username')
+    password = data.get('password')
+    email = data.get('email')
 
     if not username or not password:
         return jsonify({"message": "Username and password are required"}), 400
@@ -108,8 +109,9 @@ def api_register_user():
 
 @app.route("/api/login", methods=["POST"])
 def api_login_user():
-    username = request.json.get('username')
-    password = request.json.get('password')
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username')
+    password = data.get('password')
 
     if not username or not password:
         return jsonify({"message": "Username and password are required"}), 400
@@ -127,8 +129,9 @@ def api_login_user():
 
 @app.route("/api/messages/send", methods=["POST"])
 def api_send_message():
-    sender_id = request.json.get('sender_id')
-    message = request.json.get('message')
+    data = request.get_json(force=True, silent=True) or {}
+    sender_id = data.get('sender_id')
+    message = data.get('message')
 
     if not sender_id or not message:
         return jsonify({"message": "Sender ID and message are required"}), 400
@@ -155,7 +158,79 @@ def api_get_messages():
         app_logger.error(f"Error getting messages: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-# Admin Panel GUI Setup
+# Friend System APIs
+
+@app.route("/api/friends/request", methods=["POST"])
+def send_friend_request():
+    data = request.get_json(force=True, silent=True) or {}
+    requester_id = data.get("requester_id")
+    addressee_tag = data.get("addressee_tag")  # e.g. "Ali#1234"
+
+    if not requester_id or not addressee_tag:
+        return jsonify({"error": "requester_id and addressee_tag are required"}), 400
+
+    user = db.get_user_by_username_tag(addressee_tag)
+    if not user:
+        return jsonify({"error": "User with that tag not found"}), 404
+
+    addressee_id = user["id"]
+
+    success, msg = db.send_friend_request(requester_id, addressee_id)
+    if success:
+        return jsonify({"message": msg}), 200
+    else:
+        return jsonify({"error": msg}), 400
+
+@app.route("/api/friends/respond", methods=["POST"])
+def respond_friend_request():
+    data = request.get_json(force=True, silent=True) or {}
+    requester_id = data.get("requester_id")
+    addressee_id = data.get("addressee_id")
+    accept = data.get("accept")
+
+    if not all([requester_id, addressee_id]) or accept is None:
+        return jsonify({"error": "requester_id, addressee_id and accept(boolean) are required"}), 400
+
+    success, msg = db.respond_to_friend_request(requester_id, addressee_id, accept=bool(accept))
+    if success:
+        return jsonify({"message": msg}), 200
+    else:
+        return jsonify({"error": msg}), 400
+
+@app.route("/api/friends/list/<int:user_id>", methods=["GET"])
+def get_friends_list(user_id):
+    try:
+        friends = db.get_friends(user_id)
+        return jsonify(friends), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/friends/requests/<int:user_id>", methods=["GET"])
+def get_pending_friend_requests(user_id):
+    try:
+        requests = db.get_pending_friend_requests(user_id)
+        return jsonify(requests), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/friends/remove", methods=["POST"])
+def remove_friend():
+    data = request.get_json(force=True, silent=True) or {}
+    user_id = data.get("user_id")
+    friend_id = data.get("friend_id")
+
+    if not user_id or not friend_id:
+        return jsonify({"error": "user_id and friend_id are required"}), 400
+
+    try:
+        db.remove_friend(user_id, friend_id)
+        return jsonify({"message": "Friend removed"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- Admin Panel GUI ---
+
 class AdminPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -211,7 +286,9 @@ class AdminPanel(ctk.CTk):
             ("👥 Users", self._show_users),
             ("🟢 Online Users", self._show_online_users),
             ("📨 Messages", self._show_messages),
-            ("📊 Statistics", self._show_stats)
+            ("📊 Statistics", self._show_stats),
+            ("🤝 Friend Requests", self._show_friend_requests),
+            ("👫 Friends List", self._show_friends)
         ]
 
         for i, (text, command) in enumerate(menu_items):
@@ -292,6 +369,25 @@ class AdminPanel(ctk.CTk):
             self._display_error(f"Error loading stats: {e}")
             app_logger.error(f"Admin Panel: Error loading stats: {e}", exc_info=True)
 
+    def _show_friend_requests(self):
+        try:
+            # نمایش درخواست‌های دوستی معلق برای همه کاربران (یا می‌تونی فیلتر کنی)
+            # اینجا من فقط درخواست‌های همه رو نمایش میدم برای مدیریت
+            requests = db.get_all_pending_friend_requests()  # فرض می‌کنم این متد اضافه شده
+            self._display_data(requests, ["requester", "addressee", "requested_at"], "Pending Friend Requests")
+        except Exception as e:
+            self._display_error(f"Error loading friend requests: {e}")
+            app_logger.error(f"Admin Panel: Error loading friend requests: {e}", exc_info=True)
+
+    def _show_friends(self):
+        try:
+            # نمایش لیست دوستان همه کاربران (برای مدیریت)
+            friends = db.get_all_friends()  # فرض می‌کنم این متد اضافه شده
+            self._display_data(friends, ["user_id", "friend_id", "since"], "Friends List")
+        except Exception as e:
+            self._display_error(f"Error loading friends list: {e}")
+            app_logger.error(f"Admin Panel: Error loading friends list: {e}", exc_info=True)
+
     def _display_data(self, data, headers, title):
         self._set_data_text(f"{title}\n\n")
         if not data:
@@ -333,7 +429,9 @@ class AdminPanel(ctk.CTk):
         self.is_running = False
         self.destroy()
 
-# Main Application Execution
+
+# --- Run Server and GUI ---
+
 def run_flask_server():
     app_logger.info("Flask Server: Attempting to start...")
     try:
@@ -342,10 +440,11 @@ def run_flask_server():
         app_logger.critical(f"Flask Server: CRITICAL ERROR - Failed to start: {e}", exc_info=True)
         os._exit(1)
 
+
 if __name__ == "__main__":
     app_logger.info("Main: Starting application sequence.")
 
-    # Port availability check
+    # Check port availability
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(('127.0.0.1', 5000))
@@ -356,7 +455,7 @@ if __name__ == "__main__":
         app_logger.critical(f"Main: Port 5000 is already in use: {e}. Please close the application using it or choose a different port.", exc_info=True)
         sys.exit(1)
 
-    # Run Flask server in a daemon thread
+    # Start Flask server thread
     flask_thread = threading.Thread(target=run_flask_server, daemon=True)
     flask_thread.start()
     app_logger.info("Main: Flask server thread started.")
@@ -364,7 +463,7 @@ if __name__ == "__main__":
     # Wait a moment for Flask to start
     time.sleep(1)
 
-    # Run CustomTkinter admin panel in main thread
+    # Start Admin Panel GUI on main thread
     app_logger.info("Main: Starting CustomTkinter Admin Panel GUI...")
     try:
         admin_panel = AdminPanel()
