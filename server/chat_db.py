@@ -329,4 +329,9 @@ class ChatDatabase:
             WHERE f.status = 'accepted'
         """
         return self._execute_query(query, fetch_all=True)
+    
+    def update_activity(self, user_id):
+        query = "UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE id = ?"
+        self._execute_query(query, (user_id,))
+
 

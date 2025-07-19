@@ -126,7 +126,6 @@ def api_login_user():
     except Exception as e:
         app_logger.error(f"Error during login: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
 @app.route("/api/messages/send", methods=["POST"])
 def api_send_message():
     data = request.get_json(force=True, silent=True) or {}
@@ -137,7 +136,7 @@ def api_send_message():
         return jsonify({"message": "Sender ID and message are required"}), 400
 
     try:
-        user = db.get_user(sender_id)
+        user = db.get_user_by_id(sender_id)  # اینجا اصلاح شد
         if not user:
             return jsonify({"message": "Sender ID does not exist."}), 404
 

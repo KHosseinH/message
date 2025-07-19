@@ -9,11 +9,9 @@ from PyQt6.QtGui import QFont
 import LoginWindow
 import RegistrationWindow
 import ChatWindow
+from FriendsWindow import FriendsPage
 
 class ChatClient(QMainWindow):
-    """
-    Main application window with a Discord-like layout.
-    """
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ChatApp - Discord Style")
@@ -26,69 +24,29 @@ class ChatClient(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
-        # Placeholders for navigation and content
-        self.nav_widget = None
-        self.stacked_widget = None
+        # صفحات
         self.home_page = None
         self.chat_page = None
         self.profile_page = None
+        self.friends_page = None
+
+        # ویجت های ناوبری و اصلی
+        self.nav_widget = None
+        self.stacked_widget = None
 
         self.show_login_ui()
 
-    def show_login_ui(self):
-        self.login_widget = LoginWindow.LoginWindow(self)
-        self.setCentralWidget(self.login_widget)
-        self.status_bar.showMessage("Welcome! Please log in.")
-
-    def show_registration_ui(self):
-        self.registration_widget = RegistrationWindow.RegistrationWindow(self)
-        self.setCentralWidget(self.registration_widget)
-        self.status_bar.showMessage("Create a new account.")
-
-    def show_main_ui(self):
-        # Stop old timers if exist
-        if self.chat_page:
-            self.chat_page.stop_timers()
-
-        # Navigation
-        self.nav_widget = self.create_navigation()
-
-        # Pages
-        self.stacked_widget = QStackedWidget()
-        self.home_page = QLabel(f"🏠 Welcome {self.username}!", alignment=Qt.AlignmentFlag.AlignCenter)
-        self.home_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
-
-        self.chat_page = ChatWindow.ChatWindow(self)
-
-        self.profile_page = QLabel(f"👤 Profile of {self.username}", alignment=Qt.AlignmentFlag.AlignCenter)
-        self.profile_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
-
-        self.stacked_widget.addWidget(self.home_page)
-        self.stacked_widget.addWidget(self.chat_page)
-        self.stacked_widget.addWidget(self.profile_page)
-
-        # Main layout
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.nav_widget)
-        main_layout.addWidget(self.stacked_widget)
-
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
-
-        self.open_home_page()
-
-        self.status_bar.showMessage(f"Logged in as {self.username}")
-
     def create_navigation(self):
         nav_layout = QVBoxLayout()
+        
         self.home_btn = QPushButton("🏠 Home")
         self.chat_btn = QPushButton("💬 Chat")
+        self.friends_btn = QPushButton("👥 Friends")  # اینجا تعریف میشه
         self.profile_btn = QPushButton("👤 Profile")
         self.logout_btn = QPushButton("🚪 Logout")
 
-        buttons = [self.home_btn, self.chat_btn, self.profile_btn, self.logout_btn]
+        buttons = [self.home_btn, self.chat_btn, self.friends_btn, self.profile_btn, self.logout_btn]
+
         for btn in buttons:
             btn.setFixedHeight(45)
             btn.setFont(QFont("Arial", 11))
@@ -106,9 +64,10 @@ class ChatClient(QMainWindow):
 
         nav_layout.addStretch(1)
 
-        # Connect once
+        # اتصال سیگنال‌ها
         self.home_btn.clicked.connect(self.open_home_page)
         self.chat_btn.clicked.connect(self.open_chat_page)
+        self.friends_btn.clicked.connect(self.open_friends_page)
         self.profile_btn.clicked.connect(self.open_profile_page)
         self.logout_btn.clicked.connect(self.handle_logout)
 
@@ -117,6 +76,44 @@ class ChatClient(QMainWindow):
         nav_widget.setStyleSheet("background-color: #1E1F23;")
         nav_widget.setLayout(nav_layout)
         return nav_widget
+    def show_main_ui(self):
+        if self.chat_page:
+            self.chat_page.stop_timers()
+
+        self.nav_widget = self.create_navigation()
+
+        self.stacked_widget = QStackedWidget()
+        self.home_page = QLabel(f"🏠 Welcome {self.username}!", alignment=Qt.AlignmentFlag.AlignCenter)
+        self.home_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+
+        self.chat_page = ChatWindow.ChatWindow(self)
+        self.profile_page = QLabel(f"👤 Profile of {self.username}", alignment=Qt.AlignmentFlag.AlignCenter)
+        self.profile_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+
+        self.friends_page = FriendsPage(user_id=self.user_id)
+
+        self.stacked_widget.addWidget(self.home_page)
+        self.stacked_widget.addWidget(self.chat_page)
+        self.stacked_widget.addWidget(self.friends_page)  # اضافه کردن صفحه دوستان به استک
+        self.stacked_widget.addWidget(self.profile_page)
+
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(self.nav_widget)
+        main_layout.addWidget(self.stacked_widget)
+
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
+
+        self.open_home_page()
+        self.status_bar.showMessage(f"Logged in as {self.username}")
+
+    def open_friends_page(self):
+        if self.chat_page:
+            self.chat_page.stop_timers()
+        self.stacked_widget.setCurrentWidget(self.friends_page)
+        self.status_bar.showMessage("Viewing your friends.")
 
     def open_home_page(self):
         if self.chat_page:
@@ -166,6 +163,27 @@ class ChatClient(QMainWindow):
         else:
             print(f"Unknown page: {page_name}")
 
+    def open_friends_page(self):
+        if self.chat_page:
+            self.chat_page.stop_timers()
+        self.stacked_widget.setCurrentWidget(self.friends_page)
+        self.status_bar.showMessage("Viewing your friends.")
+
+    def show_login_ui(self):
+        self.login_widget = LoginWindow.LoginWindow(self)
+        self.setCentralWidget(self.login_widget)
+        self.status_bar.showMessage("Welcome! Please log in.")
+
+    def show_registration_ui(self):
+        self.registration_widget = RegistrationWindow.RegistrationWindow(self)
+        self.setCentralWidget(self.registration_widget)
+        self.status_bar.showMessage("Create a new account.")
+
+    def open_friends_page(self):
+        if self.chat_page:
+            self.chat_page.stop_timers()
+        self.stacked_widget.setCurrentWidget(self.friends_page)
+        self.status_bar.showMessage("Viewing your friends.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
