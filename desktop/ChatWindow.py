@@ -10,6 +10,7 @@ from PyQt6.QtGui import QFont, QTextCursor
 
 import NetworkThread
 
+
 def to_tehran_time_persian(utc_iso_string):
     utc_dt = datetime.fromisoformat(utc_iso_string.replace('Z', '+00:00'))
     tehran = pytz.timezone('Asia/Tehran')
@@ -31,7 +32,6 @@ class ChatWindow(QWidget):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
 
-        # Sidebar for online users
         right_panel = QVBoxLayout()
         online_label = QLabel("Online Users")
         online_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
@@ -45,7 +45,6 @@ class ChatWindow(QWidget):
         right_panel.addWidget(self.online_users_list)
         right_panel.addStretch(1)
 
-        # Main chat area
         chat_layout = QVBoxLayout()
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
@@ -64,8 +63,8 @@ class ChatWindow(QWidget):
         self.message_input.setFont(QFont("Arial", 12))
         self.message_input.setMinimumHeight(38)
         self.message_input.setStyleSheet("""
-            padding: 5px; 
-            border: 1px solid #666; 
+            padding: 5px;
+            border: 1px solid #666;
             border-radius: 5px;
             background-color: #1e1f23;
             color: #eee;
@@ -85,7 +84,6 @@ class ChatWindow(QWidget):
         main_layout.addLayout(right_panel, stretch=0)
         self.setLayout(main_layout)
 
-        # Connect signals
         self.send_btn.clicked.connect(self.send_message)
         self.message_input.returnPressed.connect(self.send_message)
 
@@ -110,11 +108,26 @@ class ChatWindow(QWidget):
         self.update_users_timer.stop()
         self.activity_ping_timer.stop()
 
+        for thread in [
+            getattr(self, 'messages_thread', None),
+            getattr(self, 'send_message_thread', None),
+            getattr(self, 'users_thread', None),
+            getattr(self, 'activity_thread', None)
+        ]:
+            if thread and thread.isRunning():
+                thread.quit()
+                thread.wait()
+
+    def closeEvent(self, event):
+        self.stop_timers()
+        event.accept()
+
     def update_messages(self):
         if self.parent_app.user_id is None:
             return
         self.messages_thread = NetworkThread.NetworkThread(
-            f"messages?last_id={self.last_message_id}&limit=50"
+            f"messages?last_id={self.last_message_id}&limit=50",
+            parent=self
         )
         self.messages_thread.data_received.connect(self.update_messages_display)
         self.messages_thread.error_occurred.connect(lambda e: print(f"Error updating messages: {e}"))
@@ -161,7 +174,6 @@ class ChatWindow(QWidget):
 
         self.last_message_id = max_message_id
 
-        # smart scroll only if was at bottom
         if at_bottom:
             scrollbar.setValue(scrollbar.maximum())
 
@@ -180,7 +192,8 @@ class ChatWindow(QWidget):
         self.send_message_thread = NetworkThread.NetworkThread(
             "messages/send",
             {"sender_id": self.parent_app.user_id, "message": message},
-            "POST"
+            "POST",
+            parent=self
         )
         self.send_message_thread.data_received.connect(self.message_sent_success)
         self.send_message_thread.error_occurred.connect(self.show_error)
@@ -194,7 +207,7 @@ class ChatWindow(QWidget):
         self.update_messages()
 
     def update_users(self):
-        self.users_thread = NetworkThread.NetworkThread("users/online")
+        self.users_thread = NetworkThread.NetworkThread("users/online", parent=self)
         self.users_thread.data_received.connect(self.update_users_list)
         self.users_thread.error_occurred.connect(lambda e: print(f"Error updating users: {e}"))
         self.users_thread.start()
@@ -208,7 +221,8 @@ class ChatWindow(QWidget):
         self.activity_thread = NetworkThread.NetworkThread(
             "/users/activity",
             {"user_id": self.parent_app.user_id},
-            "POST"
+            "POST",
+            parent=self
         )
         self.activity_thread.start()
 

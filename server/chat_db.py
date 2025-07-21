@@ -166,19 +166,15 @@ class ChatDatabase:
 
 
     def get_friends(self, user_id):
-        # دوستانی که user_id درخواست داده و قبول شده
-        friends1 = self._execute_query(
-            """SELECT u.id, u.username, u.tag FROM friends f
-            JOIN users u ON f.addressee_id = u.id
-            WHERE f.requester_id = ? AND f.status = 'accepted'""",
-            (user_id,), fetch_all=True)
-        # دوستانی که به user_id درخواست داده و قبول شده
-        friends2 = self._execute_query(
-            """SELECT u.id, u.username, u.tag FROM friends f
-            JOIN users u ON f.requester_id = u.id
-            WHERE f.addressee_id = ? AND f.status = 'accepted'""",
-            (user_id,), fetch_all=True)
-        return friends1 + friends2
+        query = """
+            SELECT u.id, u.username || '#' || u.tag AS username_tag
+            FROM friends f
+            JOIN users u ON 
+                ( (f.requester_id = ? AND f.addressee_id = u.id) OR (f.addressee_id = ? AND f.requester_id = u.id) )
+            WHERE f.status = 'accepted'
+        """
+        return self._execute_query(query, (user_id, user_id), fetch_all=True)
+
 
     def are_friends(self, user_id_1, user_id_2):
         uid1, uid2 = sorted([user_id_1, user_id_2])
@@ -263,13 +259,16 @@ class ChatDatabase:
         return friends1 + friends2
 
     # گرفتن درخواست‌های دوستی دریافت شده (pending)
-    def get_pending_friend_requests(self, user_id):
-        requests = self._execute_query(
-            """SELECT f.requester_id, u.username, u.tag, f.requested_at FROM friends f
+    def get_pending_friend_requests(self, user_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT f.id, u.username AS from_username, f.requested_at
+            FROM friends f
             JOIN users u ON f.requester_id = u.id
-            WHERE f.addressee_id = ? AND f.status = 'pending'""",
-            (user_id,), fetch_all=True)
-        return requests
+            WHERE f.addressee_id = ? AND f.status = 'pending'
+        """, (user_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
     # حذف دوست (قطع رابطه دوطرفه)
     def remove_friend(self, user_id, friend_id):
@@ -334,4 +333,17 @@ class ChatDatabase:
         query = "UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE id = ?"
         self._execute_query(query, (user_id,))
 
+    def is_user_online(self, user_id: int, minutes=5):
+        threshold = datetime.utcnow() - timedelta(minutes=minutes)
+        query = "SELECT 1 FROM users WHERE id = ? AND last_activity >= ?"
+        result = self._execute_query(query, (user_id, threshold.strftime('%Y-%m-%d %H:%M:%S')), fetch_one=True)
+        return result is not None
+
+    def get_online_friends(self, user_id: int):
+        friends = self.get_friends(user_id)  # متدی که شما دارید و user_id می‌گیرد
+        online_friends = []
+        for friend in friends:
+            if self.is_user_online(friend['id']):
+                online_friends.append(friend)
+        return online_friends
 

@@ -1,40 +1,44 @@
 import threading
 import time
+import socket
+import sys
+import os
+import logging
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import customtkinter as ctk
-import os
-import sys
-import logging
-import socket
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ---------- Logging Setup ----------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 app_logger = logging.getLogger('chat_server_app')
 
-# Import ChatDatabase from chat_db.py
+# ---------- Import ChatDatabase ----------
 try:
     from chat_db import ChatDatabase
     app_logger.info("Successfully imported ChatDatabase from chat_db.py")
 except ImportError:
     app_logger.critical("\n--- CRITICAL ERROR ---")
-    app_logger.critical("Error: chat_db.py not found or ChatDatabase class not defined within it. "
-                        "Please ensure 'chat_db.py' is in the same directory and contains the ChatDatabase class.")
+    app_logger.critical("chat_db.py not found or ChatDatabase class not defined within it.")
+    app_logger.critical("Make sure chat_db.py is in the same directory and contains ChatDatabase class.")
     app_logger.critical("Exiting application.")
     sys.exit(1)
 except Exception as e:
-    app_logger.critical(f"An unexpected error occurred during ChatDatabase import: {e}", exc_info=True)
+    app_logger.critical(f"Unexpected error importing ChatDatabase: {e}", exc_info=True)
     sys.exit(1)
 
-# Initialize the database globally
+# ---------- Initialize Database ----------
 db = ChatDatabase()
 app_logger.info("ChatDatabase instance initialized.")
 
-# Flask app setup
+# ---------- Flask App Setup ----------
 app = Flask(__name__)
-CORS(app)  # Enable Cross-Origin Resource Sharing
+CORS(app)  # Enable Cross-Origin Resource Sharing for all domains
 
-# --- API Endpoints ---
+# ------------------ API Endpoints ------------------
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
@@ -45,13 +49,20 @@ def get_status():
         app_logger.error(f"Error getting server status: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
     try:
         users = db.get_all_users()
+        # Only expose safe fields
         safe_users = [
-            {"id": u["id"], "username": u["username"], "email": u["email"],
-             "created_at": u["created_at"], "last_activity": u["last_activity"]}
+            {
+                "id": u["id"],
+                "username": u["username"],
+                "email": u.get("email", ""),
+                "created_at": u.get("created_at", ""),
+                "last_activity": u.get("last_activity", "")
+            }
             for u in users
         ]
         return jsonify(safe_users), 200
@@ -59,24 +70,29 @@ def api_get_users():
         app_logger.error(f"Error getting all users: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/users/online", methods=["GET"])
 def api_get_online_users():
     try:
         online_users = db.get_online_users()
-        return jsonify([
-            {"id": u["id"], "username": u["username"], "last_activity": u["last_activity"]}
+        safe_users = [
+            {"id": u["id"], "username": u["username"], "last_activity": u.get("last_activity", "")}
             for u in online_users
-        ]), 200
+        ]
+        return jsonify(safe_users), 200
     except Exception as e:
         app_logger.error(f"Error getting online users: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/users/activity", methods=["POST"])
 def api_update_user_activity():
     data = request.get_json(force=True, silent=True) or {}
     user_id = data.get('user_id')
+
     if not user_id:
         return jsonify({"message": "User ID is required"}), 400
+
     try:
         if db.update_activity(user_id):
             return jsonify({"message": "Activity updated"}), 200
@@ -85,6 +101,7 @@ def api_update_user_activity():
     except Exception as e:
         app_logger.error(f"Error updating user activity for {user_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/register", methods=["POST"])
 def api_register_user():
@@ -107,6 +124,7 @@ def api_register_user():
         app_logger.error(f"Error during registration: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/login", methods=["POST"])
 def api_login_user():
     data = request.get_json(force=True, silent=True) or {}
@@ -126,6 +144,8 @@ def api_login_user():
     except Exception as e:
         app_logger.error(f"Error during login: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/messages/send", methods=["POST"])
 def api_send_message():
     data = request.get_json(force=True, silent=True) or {}
@@ -136,7 +156,7 @@ def api_send_message():
         return jsonify({"message": "Sender ID and message are required"}), 400
 
     try:
-        user = db.get_user_by_id(sender_id)  # اینجا اصلاح شد
+        user = db.get_user_by_id(sender_id)
         if not user:
             return jsonify({"message": "Sender ID does not exist."}), 404
 
@@ -146,6 +166,7 @@ def api_send_message():
     except Exception as e:
         app_logger.error(f"Error sending message: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/messages", methods=["GET"])
 def api_get_messages():
@@ -157,28 +178,43 @@ def api_get_messages():
         app_logger.error(f"Error getting messages: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-# Friend System APIs
+
+# ------------- Friend System APIs -------------
+
+@app.route("/api/friends/requests", methods=["GET"])
+def get_friend_requests_api():
+    user_id = request.args.get("user_id")
+    if not user_id or not user_id.isdigit():
+        return jsonify({"message": "Missing or invalid user_id"}), 400
+    user_id = int(user_id)
+    try:
+        requests = db.get_pending_friend_requests(user_id)
+        app_logger.info(f"Friend requests for user_id={user_id}: {requests}")
+        return jsonify(requests), 200
+    except Exception as e:
+        app_logger.error(f"Error getting friend requests for user {user_id}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/friends/request", methods=["POST"])
 def send_friend_request():
     data = request.get_json(force=True, silent=True) or {}
-    requester_id = data.get("requester_id")
-    addressee_tag = data.get("addressee_tag")  # e.g. "Ali#1234"
+    from_user_id = data.get("from_user_id")
+    to_identifier = data.get("to_identifier")  # مثل username#1234
 
-    if not requester_id or not addressee_tag:
-        return jsonify({"error": "requester_id and addressee_tag are required"}), 400
+    if not from_user_id or not to_identifier:
+        return jsonify({"message": "Missing data"}), 400
 
-    user = db.get_user_by_username_tag(addressee_tag)
-    if not user:
-        return jsonify({"error": "User with that tag not found"}), 404
+    try:
+        success, message = db.send_friend_request(int(from_user_id), to_identifier)
+        if success:
+            return jsonify({"message": message}), 200
+        else:
+            return jsonify({"message": message}), 400
+    except Exception as e:
+        app_logger.error(f"Error sending friend request from {from_user_id} to {to_identifier}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
-    addressee_id = user["id"]
-
-    success, msg = db.send_friend_request(requester_id, addressee_id)
-    if success:
-        return jsonify({"message": msg}), 200
-    else:
-        return jsonify({"error": msg}), 400
 
 @app.route("/api/friends/respond", methods=["POST"])
 def respond_friend_request():
@@ -190,27 +226,44 @@ def respond_friend_request():
     if not all([requester_id, addressee_id]) or accept is None:
         return jsonify({"error": "requester_id, addressee_id and accept(boolean) are required"}), 400
 
-    success, msg = db.respond_to_friend_request(requester_id, addressee_id, accept=bool(accept))
-    if success:
-        return jsonify({"message": msg}), 200
-    else:
-        return jsonify({"error": msg}), 400
-
-@app.route("/api/friends/list/<int:user_id>", methods=["GET"])
-def get_friends_list(user_id):
     try:
-        friends = db.get_friends(user_id)
-        return jsonify(friends), 200
+        success, msg = db.respond_to_friend_request(requester_id, addressee_id, accept=bool(accept))
+        if success:
+            return jsonify({"message": msg}), 200
+        else:
+            return jsonify({"error": msg}), 400
     except Exception as e:
+        app_logger.error(f"Error responding to friend request: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/friends/requests/<int:user_id>", methods=["GET"])
-def get_pending_friend_requests(user_id):
+
+@app.route("/api/friends/all", methods=["GET"])
+def get_all_friends():
+    user_id = request.args.get("user_id")
+    if not user_id:
+        return jsonify({"message": "Missing user_id"}), 400
+
     try:
-        requests = db.get_pending_friend_requests(user_id)
-        return jsonify(requests), 200
+        all_friends = db.get_friends(int(user_id))
+        return jsonify(all_friends), 200
     except Exception as e:
+        app_logger.error(f"Error getting all friends for user {user_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/friends/online", methods=["GET"])
+def get_online_friends():
+    user_id = request.args.get("user_id")
+    if not user_id:
+        return jsonify({"message": "Missing user_id"}), 400
+
+    try:
+        online_friends = db.get_online_friends(int(user_id))
+        return jsonify(online_friends), 200
+    except Exception as e:
+        app_logger.error(f"Error getting online friends for user {user_id}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/friends/remove", methods=["POST"])
 def remove_friend():
@@ -225,15 +278,18 @@ def remove_friend():
         db.remove_friend(user_id, friend_id)
         return jsonify({"message": "Friend removed"}), 200
     except Exception as e:
+        app_logger.error(f"Error removing friend {friend_id} for user {user_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
-# --- Admin Panel GUI ---
+# ----------------- Admin Panel GUI -----------------
 
 class AdminPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
-        app_logger.info("AdminPanel: __init__ started.")
+
+        app_logger.info("AdminPanel: Initializing GUI...")
+
         self.title("🛠️ Chat Server Admin Panel")
         self.geometry("1200x800")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -245,42 +301,41 @@ class AdminPanel(ctk.CTk):
 
         try:
             self._setup_ui()
-            app_logger.info("AdminPanel: _setup_ui completed.")
         except Exception as e:
-            app_logger.critical(f"AdminPanel: Error during _setup_ui: {e}", exc_info=True)
+            app_logger.critical(f"AdminPanel: Error during UI setup: {e}", exc_info=True)
             sys.exit(1)
 
-        self.after(100, self._initial_data_load_and_timer_start)
-        app_logger.info("AdminPanel: Scheduled initial data load and timer start.")
+        # Start initial data load and recurring updates
+        self.after(100, self._initial_data_load_and_start_timer)
 
-    def _initial_data_load_and_timer_start(self):
-        app_logger.info("AdminPanel: _initial_data_load_and_timer_start called.")
+    def _initial_data_load_and_start_timer(self):
+        app_logger.info("AdminPanel: Loading initial data and starting update timer.")
         try:
             self._update_data()
-            app_logger.info("AdminPanel: Initial _update_data completed.")
         except Exception as e:
-            app_logger.error(f"AdminPanel: Error during initial _update_data (non-fatal): {e}", exc_info=True)
+            app_logger.error(f"AdminPanel: Error during initial data update: {e}", exc_info=True)
 
         if self.is_running:
-            self.after(5000, self._start_update_timer_recurring)
-            app_logger.info("AdminPanel: Recurring update timer scheduled.")
+            self.after(5000, self._start_update_timer)
 
-    def _start_update_timer_recurring(self):
+    def _start_update_timer(self):
         if self.is_running:
             try:
                 self._update_data()
             except Exception as e:
-                app_logger.error(f"AdminPanel: Error during recurring _update_data: {e}", exc_info=True)
-            self.after(5000, self._start_update_timer_recurring)
+                app_logger.error(f"AdminPanel: Error during periodic data update: {e}", exc_info=True)
+            self.after(5000, self._start_update_timer)
 
     def _setup_ui(self):
-        app_logger.info("AdminPanel: _setup_ui started.")
+        app_logger.info("AdminPanel: Setting up UI components.")
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
+        # Sidebar Frame
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
+        # Sidebar buttons and commands
         menu_items = [
             ("👥 Users", self._show_users),
             ("🟢 Online Users", self._show_online_users),
@@ -290,36 +345,41 @@ class AdminPanel(ctk.CTk):
             ("👫 Friends List", self._show_friends)
         ]
 
-        for i, (text, command) in enumerate(menu_items):
+        for i, (text, cmd) in enumerate(menu_items):
             btn = ctk.CTkButton(
-                self.sidebar,
+                master=self.sidebar,
                 text=text,
-                command=command,
+                command=cmd,
                 height=40,
                 font=ctk.CTkFont(size=14),
                 anchor="w"
             )
             btn.grid(row=i, column=0, padx=10, pady=5, sticky="ew")
 
+        # Main content frame
         self.main_panel = ctk.CTkFrame(self)
         self.main_panel.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
         self.data_text = ctk.CTkTextbox(
-            self.main_panel,
+            master=self.main_panel,
             wrap="none",
-            font=ctk.CTkFont(family="Consolas", size=12)
+            font=ctk.CTkFont(family="Consolas", size=12),
+            state="disabled"
         )
         self.data_text.pack(fill="both", expand=True, padx=5, pady=5)
 
+        # Status bar
         self.status_bar = ctk.CTkLabel(
-            self,
+            master=self,
             text="🟢 Server is starting...",
             anchor="w"
         )
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
-        app_logger.info("AdminPanel: _setup_ui components created.")
+
+        app_logger.info("AdminPanel: UI setup completed.")
 
     def _update_data(self):
+        # Update status bar with server stats
         try:
             stats = db.get_statistics()
             self.status_bar.configure(
@@ -334,14 +394,18 @@ class AdminPanel(ctk.CTk):
         try:
             users = db.get_all_users()
             display_users = [
-                {"id": u["id"], "username": u["username"], "email": u["email"],
-                 "created_at": u["created_at"], "last_activity": u["last_activity"]}
+                {
+                    "id": u["id"],
+                    "username": u["username"],
+                    "email": u.get("email", ""),
+                    "created_at": u.get("created_at", ""),
+                    "last_activity": u.get("last_activity", "")
+                }
                 for u in users
             ]
             self._display_data(display_users, ["id", "username", "email", "created_at", "last_activity"], "All Users")
         except Exception as e:
             self._display_error(f"Error loading users: {e}")
-            app_logger.error(f"Admin Panel: Error loading users: {e}", exc_info=True)
 
     def _show_online_users(self):
         try:
@@ -349,7 +413,6 @@ class AdminPanel(ctk.CTk):
             self._display_data(online_users, ["id", "username", "last_activity"], "Online Users")
         except Exception as e:
             self._display_error(f"Error loading online users: {e}")
-            app_logger.error(f"Admin Panel: Error loading online users: {e}", exc_info=True)
 
     def _show_messages(self):
         try:
@@ -357,7 +420,6 @@ class AdminPanel(ctk.CTk):
             self._display_data(messages, ["id", "sender", "message", "timestamp"], "Recent Messages")
         except Exception as e:
             self._display_error(f"Error loading messages: {e}")
-            app_logger.error(f"Admin Panel: Error loading messages: {e}", exc_info=True)
 
     def _show_stats(self):
         try:
@@ -366,26 +428,20 @@ class AdminPanel(ctk.CTk):
             self._set_data_text("📊 Server Statistics\n\n" + stats_text)
         except Exception as e:
             self._display_error(f"Error loading stats: {e}")
-            app_logger.error(f"Admin Panel: Error loading stats: {e}", exc_info=True)
 
     def _show_friend_requests(self):
         try:
-            # نمایش درخواست‌های دوستی معلق برای همه کاربران (یا می‌تونی فیلتر کنی)
-            # اینجا من فقط درخواست‌های همه رو نمایش میدم برای مدیریت
-            requests = db.get_all_pending_friend_requests()  # فرض می‌کنم این متد اضافه شده
+            requests = db.get_all_pending_friend_requests()
             self._display_data(requests, ["requester", "addressee", "requested_at"], "Pending Friend Requests")
         except Exception as e:
             self._display_error(f"Error loading friend requests: {e}")
-            app_logger.error(f"Admin Panel: Error loading friend requests: {e}", exc_info=True)
 
     def _show_friends(self):
         try:
-            # نمایش لیست دوستان همه کاربران (برای مدیریت)
-            friends = db.get_all_friends()  # فرض می‌کنم این متد اضافه شده
+            friends = db.get_all_friends()
             self._display_data(friends, ["user_id", "friend_id", "since"], "Friends List")
         except Exception as e:
             self._display_error(f"Error loading friends list: {e}")
-            app_logger.error(f"Admin Panel: Error loading friends list: {e}", exc_info=True)
 
     def _display_data(self, data, headers, title):
         self._set_data_text(f"{title}\n\n")
@@ -393,20 +449,22 @@ class AdminPanel(ctk.CTk):
             self._append_data_text("No data available.\n")
             return
 
+        # Calculate column widths
         column_widths = {header: len(header) for header in headers}
-        for item in data:
+        for row in data:
             for header in headers:
-                column_widths[header] = max(column_widths[header], len(str(item.get(header, ""))))
+                column_widths[header] = max(column_widths[header], len(str(row.get(header, ""))))
 
-        header_line_parts = [f"{header.replace('_', ' ').title():<{column_widths[header]}}" for header in headers]
-        header_line = " | ".join(header_line_parts)
-        self._append_data_text(f"{header_line}\n")
-        self._append_data_text(f"{'-' * len(header_line)}\n")
+        # Header line
+        header_line = " | ".join(f"{header.replace('_', ' ').title():<{column_widths[header]}}" for header in headers)
+        separator = "-" * len(header_line)
+        self._append_data_text(header_line + "\n")
+        self._append_data_text(separator + "\n")
 
-        for item in data:
-            line_parts = [f"{str(item.get(header, '')):<{column_widths[header]}}" for header in headers]
-            line = " | ".join(line_parts)
-            self._append_data_text(f"{line}\n")
+        # Rows
+        for row in data:
+            line = " | ".join(f"{str(row.get(header, '')):<{column_widths[header]}}" for header in headers)
+            self._append_data_text(line + "\n")
 
     def _set_data_text(self, text):
         self.data_text.configure(state="normal")
@@ -424,53 +482,53 @@ class AdminPanel(ctk.CTk):
         app_logger.error(f"Admin Panel Error: {message}")
 
     def _on_close(self):
-        app_logger.info("AdminPanel: Window close requested. Stopping.")
+        app_logger.info("AdminPanel: Window close requested. Shutting down...")
         self.is_running = False
         self.destroy()
 
 
-# --- Run Server and GUI ---
+# ----------------- Run Server and GUI -----------------
 
 def run_flask_server():
-    app_logger.info("Flask Server: Attempting to start...")
+    app_logger.info("Starting Flask server...")
     try:
+        # For production, you might want to use waitress/gunicorn instead
         app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
     except Exception as e:
-        app_logger.critical(f"Flask Server: CRITICAL ERROR - Failed to start: {e}", exc_info=True)
+        app_logger.critical(f"Failed to start Flask server: {e}", exc_info=True)
         os._exit(1)
 
 
 if __name__ == "__main__":
-    app_logger.info("Main: Starting application sequence.")
+    app_logger.info("Application starting...")
 
-    # Check port availability
+    # Check if port 5000 is free before running Flask
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(('127.0.0.1', 5000))
         sock.listen(1)
         sock.close()
-        app_logger.info("Main: Port 5000 is available.")
+        app_logger.info("Port 5000 is free.")
     except socket.error as e:
-        app_logger.critical(f"Main: Port 5000 is already in use: {e}. Please close the application using it or choose a different port.", exc_info=True)
+        app_logger.critical(f"Port 5000 is already in use: {e}. Please close the conflicting application or use a different port.", exc_info=True)
         sys.exit(1)
 
-    # Start Flask server thread
+    # Start Flask server in a background thread
     flask_thread = threading.Thread(target=run_flask_server, daemon=True)
     flask_thread.start()
-    app_logger.info("Main: Flask server thread started.")
+    app_logger.info("Flask server thread started.")
 
-    # Wait a moment for Flask to start
+    # Small delay to ensure Flask server starts
     time.sleep(1)
 
-    # Start Admin Panel GUI on main thread
-    app_logger.info("Main: Starting CustomTkinter Admin Panel GUI...")
+    # Run Admin Panel GUI in main thread
+    app_logger.info("Starting CustomTkinter Admin Panel GUI...")
     try:
         admin_panel = AdminPanel()
-        app_logger.info("Main: AdminPanel instance created. Calling mainloop().")
         admin_panel.mainloop()
-        app_logger.info("Main: Admin Panel mainloop exited.")
+        app_logger.info("Admin Panel GUI closed.")
     except Exception as e:
-        app_logger.critical(f"Main: Error during Admin Panel GUI mainloop: {e}", exc_info=True)
+        app_logger.critical(f"Error during Admin Panel GUI mainloop: {e}", exc_info=True)
 
-    app_logger.info("Main: Application finished.")
+    app_logger.info("Application exiting.")
     sys.exit(0)

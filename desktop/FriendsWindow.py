@@ -1,7 +1,10 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QPushButton, QMessageBox,
-    QTabWidget, QHBoxLayout, QLineEdit, QLabel
+    QTabWidget, QLabel, QLineEdit
 )
+import requests
+
+SERVER_URL = "http://localhost:5000/api"  # Base API URL
 
 class FriendsPage(QWidget):
     def __init__(self, user_id, parent=None):
@@ -11,11 +14,10 @@ class FriendsPage(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
-        # ساخت تب‌ها
         self.tabs = QTabWidget()
         self.layout.addWidget(self.tabs)
 
-        # تب آنلاین‌ها
+        # --- Online Friends Tab ---
         self.online_tab = QWidget()
         self.online_layout = QVBoxLayout()
         self.online_tab.setLayout(self.online_layout)
@@ -26,7 +28,7 @@ class FriendsPage(QWidget):
         self.online_layout.addWidget(self.online_refresh_btn)
         self.tabs.addTab(self.online_tab, "Online Friends")
 
-        # تب همه دوستان
+        # --- All Friends Tab ---
         self.all_tab = QWidget()
         self.all_layout = QVBoxLayout()
         self.all_tab.setLayout(self.all_layout)
@@ -37,7 +39,7 @@ class FriendsPage(QWidget):
         self.all_layout.addWidget(self.all_refresh_btn)
         self.tabs.addTab(self.all_tab, "All Friends")
 
-        # تب درخواست‌های دوستی
+        # --- Friend Requests Tab ---
         self.requests_tab = QWidget()
         self.requests_layout = QVBoxLayout()
         self.requests_tab.setLayout(self.requests_layout)
@@ -48,7 +50,7 @@ class FriendsPage(QWidget):
         self.requests_layout.addWidget(self.requests_refresh_btn)
         self.tabs.addTab(self.requests_tab, "Friend Requests")
 
-        # تب افزودن دوست
+        # --- Add Friend Tab ---
         self.add_tab = QWidget()
         self.add_layout = QVBoxLayout()
         self.add_tab.setLayout(self.add_layout)
@@ -61,7 +63,7 @@ class FriendsPage(QWidget):
         self.add_layout.addWidget(self.add_button)
         self.tabs.addTab(self.add_tab, "Add Friend")
 
-        # بارگذاری اولیه داده‌ها در تب‌ها
+        # Load initial data
         self.load_online_friends()
         self.load_all_friends()
         self.load_friend_requests()
@@ -71,12 +73,13 @@ class FriendsPage(QWidget):
         try:
             friends = self.fetch_online_friends()
             if not friends:
-                self.online_list.addItem("No online friends found.")
+                self.online_list.addItem("No online friends.")
             else:
                 for f in friends:
-                    self.online_list.addItem(f"{f['username']} (Online since {f['last_active']})")
+                    # فرض می‌کنیم f شامل username و since هست
+                    self.online_list.addItem(f"{f.get('username', 'Unknown')} 🤝 | Since: {f.get('since', 'N/A')}")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load online friends: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load online friends:\n{e}")
 
     def load_all_friends(self):
         self.all_list.clear()
@@ -86,9 +89,13 @@ class FriendsPage(QWidget):
                 self.all_list.addItem("No friends found.")
             else:
                 for f in friends:
-                    self.all_list.addItem(f"{f['username']}  🤝  {f['friend_name']} | Since: {f['since']}")
+                    # فرض می‌کنیم f شامل username، friend_name و since هست
+                    user_name = f.get('username', 'Unknown')
+                    friend_name = f.get('friend_name', 'Unknown')
+                    since = f.get('since', 'N/A')
+                    self.all_list.addItem(f"{user_name} 🤝 {friend_name} | Since: {since}")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load all friends: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load all friends:\n{e}")
 
     def load_friend_requests(self):
         self.requests_list.clear()
@@ -98,9 +105,12 @@ class FriendsPage(QWidget):
                 self.requests_list.addItem("No pending friend requests.")
             else:
                 for r in requests:
-                    self.requests_list.addItem(f"From {r['from_username']} (Requested at {r['requested_at']})")
+                    # فرض می‌کنیم r شامل from_username و requested_at هست
+                    from_user = r.get('from_username', 'Unknown')
+                    requested_at = r.get('requested_at', 'N/A')
+                    self.requests_list.addItem(f"From {from_user} (Requested at {requested_at})")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load friend requests: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load friend requests:\n{e}")
 
     def send_friend_request(self):
         friend_id = self.add_input.text().strip()
@@ -109,44 +119,82 @@ class FriendsPage(QWidget):
             return
 
         try:
-            # فرض کن این متد API درخواست دوستی رو ارسال میکنه
             success, message = self.api_send_friend_request(friend_id)
             if success:
                 QMessageBox.information(self, "Success", message)
                 self.add_input.clear()
-                self.load_friend_requests()  # بروزرسانی درخواست‌ها
+                self.load_friend_requests()
             else:
                 QMessageBox.warning(self, "Failed", message)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to send friend request: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to send friend request:\n{e}")
 
-    # ----------- متدهای fetch و api (نمونه‌ها) -------------
+    # ----------- Actual API Calls ------------
 
     def fetch_online_friends(self):
-        # TODO: درخواست API برای گرفتن دوستان آنلاین
-        return [
-            {"username": "Sara", "last_active": "10:23 AM"},
-            {"username": "Reza", "last_active": "09:55 AM"},
-        ]
+        try:
+            response = requests.get(
+                f"{SERVER_URL}/friends/online",
+                params={"user_id": self.user_id},
+                timeout=5
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch online friends: {e}")
 
     def fetch_all_friends(self):
-        # TODO: درخواست API برای گرفتن همه دوستان
-        return [
-            {"username": "Ali", "friend_name": "Sara", "since": "2024-07-15"},
-            {"username": "Ali", "friend_name": "Reza", "since": "2024-05-02"},
-        ]
+        try:
+            response = requests.get(
+                f"{SERVER_URL}/friends/all",
+                params={"user_id": self.user_id},
+                timeout=5
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch all friends: {e}")
 
     def fetch_friend_requests(self):
-        # TODO: درخواست API برای گرفتن درخواست‌های دوستی
-        return [
-            {"from_username": "Mahdi", "requested_at": "2024-07-18 15:22"},
-            {"from_username": "Neda", "requested_at": "2024-07-19 09:10"},
-        ]
+        try:
+            response = requests.get(
+                f"{SERVER_URL}/friends/requests",
+                params={"user_id": self.user_id},
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            print("Friend requests data:", data)  # دیباگ
+            return data
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch friend requests: {e}")
 
     def api_send_friend_request(self, friend_id):
-        # TODO: درخواست API برای ارسال درخواست دوستی
-        # نمونه پاسخ فرضی
-        if friend_id == "Invalid#0000":
-            return False, "User not found."
-        else:
-            return True, "Friend request sent successfully."
+        try:
+            response = requests.post(
+                f"{SERVER_URL}/friends/request",
+                json={
+                    "from_user_id": self.user_id,
+                    "to_identifier": friend_id
+                },
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            return True, data.get("message", "Friend request sent successfully.")
+
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_msg = response.json().get("message", str(http_err))
+            except Exception:
+                error_msg = str(http_err)
+            return False, f"HTTP error occurred: {error_msg}"
+
+        except requests.exceptions.Timeout:
+            return False, "Request timed out. Please try again."
+
+        except requests.exceptions.RequestException as err:
+            return False, f"Network error: {err}"
+
+        except Exception as e:
+            return False, f"Unexpected error: {e}"
