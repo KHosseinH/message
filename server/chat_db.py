@@ -2,17 +2,19 @@ import sqlite3
 from datetime import datetime, timedelta
 import random
 
-
 class ChatDatabase:
     def __init__(self, db_name="chat_app.db"):
         self.db_name = db_name
+        self.conn = sqlite3.connect(self.db_name, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
         self._create_tables()
 
     def _connect(self):
         conn = sqlite3.connect(self.db_name)
         conn.row_factory = sqlite3.Row
         return conn
-
+    
     def _execute_query(self, query, params=(), fetch_one=False, fetch_all=False):
         conn = self._connect()
         cursor = conn.cursor()
@@ -32,6 +34,7 @@ class ChatDatabase:
         last_id = cursor.lastrowid
         conn.close()
         return last_id
+    
     def _create_tables(self):
         queries = [
             # جدول کاربران (همونی که داری)
@@ -258,17 +261,14 @@ class ChatDatabase:
             (user_id,), fetch_all=True)
         return friends1 + friends2
 
-    # گرفتن درخواست‌های دوستی دریافت شده (pending)
-    def get_pending_friend_requests(self, user_id: int):
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT f.id, u.username AS from_username, f.requested_at
+    def get_pending_friend_requests(self, user_id):
+        query = """
+            SELECT f.id, u.username || '#' || u.tag AS from_user, f.requested_at
             FROM friends f
             JOIN users u ON f.requester_id = u.id
             WHERE f.addressee_id = ? AND f.status = 'pending'
-        """, (user_id,))
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        """
+        return self._execute_query(query, (user_id,), fetch_all=True)
 
     # حذف دوست (قطع رابطه دوطرفه)
     def remove_friend(self, user_id, friend_id):
@@ -312,12 +312,13 @@ class ChatDatabase:
 
     def get_all_pending_friend_requests(self):
         query = """
-            SELECT f.requester_id, u.username, u.tag, f.requested_at 
+            SELECT u.username || '#' || u.tag AS requester, f.requested_at 
             FROM friends f
             JOIN users u ON f.requester_id = u.id
             WHERE f.status = 'pending'
         """
         return self._execute_query(query, fetch_all=True)
+
 
     def get_all_friends(self):
         query = """
