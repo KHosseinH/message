@@ -300,13 +300,16 @@ class ChatDatabase:
 
     def get_all_pending_friend_requests(self):
         query = """
-            SELECT u.username || '#' || u.tag AS requester, f.requested_at 
+            SELECT 
+                u1.username || '#' || u1.tag AS requester, 
+                u2.username || '#' || u2.tag AS addressee, 
+                f.requested_at 
             FROM friends f
-            JOIN users u ON f.requester_id = u.id
+            JOIN users u1 ON f.requester_id = u1.id
+            JOIN users u2 ON f.addressee_id = u2.id
             WHERE f.status = 'pending'
         """
         return self._execute_query(query, fetch_all=True)
-
 
     def get_all_friends(self):
         query = """
