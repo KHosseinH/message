@@ -105,8 +105,8 @@ class FriendsPage(QWidget):
                 self.requests_list.addItem("No pending friend requests.")
             else:
                 for r in requests:
-                    # فرض می‌کنیم r شامل from_username و requested_at هست
-                    from_user = r.get('from_username', 'Unknown')
+                    # فرض می‌کنیم r شامل from_user و requested_at هست
+                    from_user = r.get('from_user', "unknown")
                     requested_at = r.get('requested_at', 'N/A')
                     self.requests_list.addItem(f"From {from_user} (Requested at {requested_at})")
         except Exception as e:
