@@ -10,6 +10,7 @@ import LoginWindow
 import RegistrationWindow
 import ChatWindow
 from FriendsWindow import FriendsPage
+from ProfileWindow import ProfilePage
 
 class ChatClient(QMainWindow):
     def __init__(self):
@@ -20,6 +21,7 @@ class ChatClient(QMainWindow):
 
         self.user_id = None
         self.username = None
+        self.tag = None
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -87,8 +89,8 @@ class ChatClient(QMainWindow):
         self.home_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
 
         self.chat_page = ChatWindow.ChatWindow(self)
-        self.profile_page = QLabel(f"👤 Profile of {self.username}", alignment=Qt.AlignmentFlag.AlignCenter)
-        self.profile_page.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        self.profile_page = ProfilePage(self.user_id, self.username, self.tag)
+
 
         self.friends_page = FriendsPage(user_id=self.user_id)
 

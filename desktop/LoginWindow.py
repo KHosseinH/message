@@ -127,12 +127,14 @@ class LoginWindow(QWidget):
 
         self.parent_app.user_id = data.get("user_id")
         self.parent_app.username = self.username_input.text().strip()
+        self.parent_app.tag = data.get("tag", "0000")  # اضافه شده برای رفع ارور
         self.parent_app.status_bar.showMessage(f"Login successful for {self.parent_app.username}.", 3000) # Message for 3 seconds
         self.parent_app.switch_page("chat")
         self.set_ui_enabled(True)
         # Clear fields after successful login for security/next use
         self.username_input.clear()
         self.password_input.clear()
+
 
     def show_error(self, message):
         QMessageBox.warning(self, "Login Error", message, QMessageBox.StandardButton.Ok)

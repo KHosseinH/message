@@ -132,18 +132,6 @@ class ChatDatabase:
         return self._execute_query(query, (username, password), fetch_one=True)
 
     # ------------------ Friends ------------------
-    def send_friend_request(self, from_id, to_id):
-        if from_id == to_id:
-            return False  # Can't add yourself
-        try:
-            return self._execute_query(
-                "INSERT INTO friends (requester_id, addressee_id, status) VALUES (?, ?, 'pending')",
-                (from_id, to_id)
-            )
-        except sqlite3.IntegrityError:
-            return False
-
-
     def get_friend_requests(self, user_id):
         query = """
             SELECT f.id, u.username || '#' || u.tag as from_user, f.status
@@ -181,8 +169,8 @@ class ChatDatabase:
 
     def are_friends(self, user_id_1, user_id_2):
         uid1, uid2 = sorted([user_id_1, user_id_2])
-        query = "SELECT 1 FROM friends WHERE user1_id = ? AND user2_id = ?"
-        result = self._execute_query(query, (uid1, uid2), fetch_one=True)
+        query = "SELECT 1 FROM friends WHERE ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)) AND status = 'accepted'"
+        result = self._execute_query(query, (user_id_1, user_id_2, user_id_2, user_id_1), fetch_one=True)
         return result is not None
 
     # ----------------- Messages ------------------
@@ -340,11 +328,14 @@ class ChatDatabase:
         result = self._execute_query(query, (user_id, threshold.strftime('%Y-%m-%d %H:%M:%S')), fetch_one=True)
         return result is not None
 
-    def get_online_friends(self, user_id: int):
-        friends = self.get_friends(user_id)  # متدی که شما دارید و user_id می‌گیرد
-        online_friends = []
-        for friend in friends:
-            if self.is_user_online(friend['id']):
-                online_friends.append(friend)
-        return online_friends
-
+    def get_online_friends(self, user_id: int, minutes=5):
+        threshold = datetime.utcnow() - timedelta(minutes=minutes)
+        query = """
+            SELECT u.id, u.username, u.tag
+            FROM friends f
+            JOIN users u ON 
+                ((f.requester_id = ? AND f.addressee_id = u.id) OR
+                (f.addressee_id = ? AND f.requester_id = u.id))
+            WHERE f.status = 'accepted' AND u.last_activity >= ?
+        """
+        return self._execute_query(query, (user_id, user_id, threshold.strftime('%Y-%m-%d %H:%M:%S')), fetch_all=True)
