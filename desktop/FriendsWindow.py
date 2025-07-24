@@ -105,7 +105,6 @@ class FriendsPage(QWidget):
                 self.requests_list.addItem("No pending friend requests.")
             else:
                 for r in requests:
-                    # فرض می‌کنیم r شامل from_user و requested_at هست
                     from_user = r.get('from_user', "unknown")
                     requested_at = r.get('requested_at', 'N/A')
                     self.requests_list.addItem(f"From {from_user} (Requested at {requested_at})")
@@ -164,7 +163,6 @@ class FriendsPage(QWidget):
             )
             response.raise_for_status()
             data = response.json()
-            print("Friend requests data:", data)  # دیباگ
             return data
         except Exception as e:
             raise RuntimeError(f"Failed to fetch friend requests: {e}")
