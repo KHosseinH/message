@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QPushButton, QMessageBox,
-    QTabWidget, QLabel, QLineEdit
+    QTabWidget, QLabel, QLineEdit, QHBoxLayout, QListWidgetItem
 )
 import requests
+from functools import partial
 
 SERVER_URL = "http://localhost:5000/api"  # Base API URL
 
@@ -101,15 +102,90 @@ class FriendsPage(QWidget):
         self.requests_list.clear()
         try:
             requests = self.fetch_friend_requests()
+            # print("Friend requests data:", requests)  # <--- چک کردن داده دریافتی
             if not requests:
                 self.requests_list.addItem("No pending friend requests.")
             else:
                 for r in requests:
+                    requester_id = r.get('from_user')
+                    print("requester_id:", requester_id)  # <--- چک کردن تک تک آی‌دی‌ها
                     from_user = r.get('from_user', "unknown")
                     requested_at = r.get('requested_at', 'N/A')
-                    self.requests_list.addItem(f"From {from_user} (Requested at {requested_at})")
+
+                    item_widget = QWidget()
+                    layout = QHBoxLayout(item_widget)
+                    layout.setContentsMargins(5, 0, 5, 0)
+
+                    label = QLabel(f"From {from_user} ({requested_at})")
+                    btn_accept = QPushButton("✔")
+                    btn_reject = QPushButton("✖")
+
+                    btn_accept.setStyleSheet("background-color: lightgreen;")
+                    btn_reject.setStyleSheet("background-color: lightcoral;")
+
+                    # اتصال صحیح
+                    btn_accept.clicked.connect(partial(self.accept_request, requester_id))
+                    btn_reject.clicked.connect(partial(self.reject_request, requester_id))
+
+                    layout.addWidget(label)
+                    layout.addStretch()
+                    layout.addWidget(btn_accept)
+                    layout.addWidget(btn_reject)
+
+                    item = QListWidgetItem()
+                    item.setSizeHint(item_widget.sizeHint())
+
+                    self.requests_list.addItem(item)
+                    self.requests_list.setItemWidget(item, item_widget)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load friend requests:\n{e}")
+
+    def accept_request(self, requester_id):
+        try:
+            payload = {
+                "requester_id": requester_id,
+                "addressee_id": self.user_id,
+                "accept": True
+            }
+            print("ACCEPT PAYLOAD:", payload)  # 👈 لاگ اضافه کن
+
+            response = requests.post(
+                f"{SERVER_URL}/friends/respond",
+                json=payload,
+                timeout=5
+            )
+            if response.status_code == 200:
+                QMessageBox.information(self, "Friend Request", f"Accepted {requester_id}")
+                self.load_friend_requests()
+            else:
+                error = response.json().get("error", "Unknown error")
+                # print("SERVER ERROR:", error)
+                QMessageBox.warning(self, "Error", f"Could not accept: {error}")
+        except Exception as e:
+            print("NETWORK ERROR:", e)
+            QMessageBox.critical(self, "Error", f"Network error: {e}")
+
+
+    def reject_request(self, requester_id):
+        try:
+            response = requests.post(
+                f"{SERVER_URL}/friends/respond",
+                json={
+                    "requester_id": requester_id,
+                    "addressee_id": self.user_id,
+                    "accept": False
+                },
+                timeout=5
+            )
+            if response.status_code == 200:
+                QMessageBox.information(self, "Friend Request", f"Rejected {requester_id}")
+                self.load_friend_requests()
+            else:
+                error = response.json().get("error", "Unknown error")
+                QMessageBox.warning(self, "Error", f"Could not reject: {error}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Network error: {e}")
+
 
     def send_friend_request(self):
         friend_id = self.add_input.text().strip()
@@ -142,17 +218,23 @@ class FriendsPage(QWidget):
         except Exception as e:
             raise RuntimeError(f"Failed to fetch online friends: {e}")
 
-    def fetch_all_friends(self):
+    def fetch_friend_requests(self):
         try:
             response = requests.get(
-                f"{SERVER_URL}/friends/all",
-                params={"user_id": self.user_id},
+                f"{SERVER_URL}/friends/requests",
+                params={
+                    "user_id": self.user_id,
+                    "user_tag": self.user_tag,  # اضافه کردن تگ
+                },
                 timeout=5
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            print(data)
+            return data
         except Exception as e:
-            raise RuntimeError(f"Failed to fetch all friends: {e}")
+            raise RuntimeError(f"Failed to fetch friend requests: {e}")
+
 
     def fetch_friend_requests(self):
         try:
@@ -163,6 +245,7 @@ class FriendsPage(QWidget):
             )
             response.raise_for_status()
             data = response.json()
+            print(data)
             return data
         except Exception as e:
             raise RuntimeError(f"Failed to fetch friend requests: {e}")

@@ -198,29 +198,37 @@ def get_friend_requests_api():
 @app.route("/api/friends/request", methods=["POST"])
 def send_friend_request():
     data = request.get_json()
-    from_user_id = data.get("from_user_id")
-    to_username_tag = data.get("to_identifier")
+    from_user_identifier = data.get("from_user_id")  # این رشته است، مثلاً "t1#1111"
+    to_username_tag = data.get("to_identifier")      # این هم رشته است مثل "t3#1111"
 
-    if not from_user_id or not to_username_tag:
+    if not from_user_identifier or not to_username_tag:
         return jsonify({"message": "Missing parameters."}), 400
 
-    user = db.get_user_by_username_tag(to_username_tag)
-    if not user:
+    # تبدیل شناسه رشته ای مبدا به عدد
+    from_user = db.get_user_by_username_tag(from_user_identifier)
+    if not from_user:
+        return jsonify({"message": "From user not found."}), 404
+
+    from_user_id = from_user['id']
+
+    # تبدیل شناسه رشته ای مقصد به عدد
+    to_user = db.get_user_by_username_tag(to_username_tag)
+    if not to_user:
         return jsonify({"message": "User not found."}), 404
 
-    to_user_id = user['id']
+    to_user_id = to_user['id']
 
-    if int(from_user_id) == to_user_id:
+    if from_user_id == to_user_id:
         return jsonify({"message": "You cannot add yourself as a friend."}), 400
 
     try:
-        success, message = db.send_friend_request(int(from_user_id), to_user_id)
+        success, message = db.send_friend_request(from_user_id, to_user_id)
         if success:
             return jsonify({"message": message}), 200
         else:
             return jsonify({"message": message}), 400
     except Exception as e:
-        app_logger.error(f"Error sending friend request from {from_user_id} to {to_username_tag}: {e}", exc_info=True)
+        app_logger.error(f"Error sending friend request from {from_user_identifier} to {to_username_tag}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/friends/respond", methods=["POST"])
@@ -231,6 +239,7 @@ def respond_friend_request():
     accept = data.get("accept")
 
     if not all([requester_id, addressee_id]) or accept is None:
+        app_logger.info(f"Received friend respond: {data}")
         return jsonify({"error": "requester_id, addressee_id and accept(boolean) are required"}), 400
 
     try:
