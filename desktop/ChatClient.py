@@ -91,8 +91,7 @@ class ChatClient(QMainWindow):
         self.chat_page = ChatWindow.ChatWindow(self)
         self.profile_page = ProfilePage(self.user_id, self.username, self.tag)
 
-
-        self.friends_page = FriendsPage(user_id=self.user_id)
+        self.friends_page = FriendsPage(username = self.username, user_id=self.user_id, user_tag=self.tag)
 
         self.stacked_widget.addWidget(self.home_page)
         self.stacked_widget.addWidget(self.chat_page)

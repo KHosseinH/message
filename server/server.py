@@ -124,7 +124,6 @@ def api_register_user():
         app_logger.error(f"Error during registration: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/api/login", methods=["POST"])
 def api_login_user():
     data = request.get_json(force=True, silent=True) or {}
@@ -138,13 +137,19 @@ def api_login_user():
         user = db.authenticate_user(username, password)
         if user:
             db.update_activity(user['id'])
-            return jsonify({"message": "Login successful", "user_id": user['id']}), 200
+
+            # ساخت رشته‌ی ترکیبی username#tag
+
+            return jsonify({
+                "message": "Login successful",
+                "user_id": user['id'],
+                "user_tag": user['tag']
+            }), 200
         else:
             return jsonify({"message": "Invalid username or password"}), 401
     except Exception as e:
         app_logger.error(f"Error during login: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/api/messages/send", methods=["POST"])
 def api_send_message():
@@ -184,12 +189,13 @@ def api_get_messages():
 @app.route("/api/friends/requests", methods=["GET"])
 def get_friend_requests_api():
     user_id = request.args.get("user_id")
+    user_tag = request.args.get("user_tag")
     if not user_id or not user_id.isdigit():
         return jsonify({"message": "Missing or invalid user_id"}), 400
     user_id = int(user_id)
     try:
         requests = db.get_pending_friend_requests(user_id)
-        app_logger.info(f"Friend requests for user_id={user_id}: {requests}")
+        app_logger.info(f"Friend requests for user_id={user_tag}: {requests}")
         return jsonify(requests), 200
     except Exception as e:
         app_logger.error(f"Error getting friend requests for user {user_id}: {e}", exc_info=True)
@@ -198,6 +204,7 @@ def get_friend_requests_api():
 @app.route("/api/friends/request", methods=["POST"])
 def send_friend_request():
     data = request.get_json()
+    print(data)
     from_user_identifier = data.get("from_user_id")  # این رشته است، مثلاً "t1#1111"
     to_username_tag = data.get("to_identifier")      # این هم رشته است مثل "t3#1111"
 
@@ -221,8 +228,11 @@ def send_friend_request():
     if from_user_id == to_user_id:
         return jsonify({"message": "You cannot add yourself as a friend."}), 400
 
+    to_user_tag = db.get_username_tag_by_id(to_user_id)
+    print(self.to_user_tag)
+
     try:
-        success, message = db.send_friend_request(from_user_id, to_user_id)
+        success, message = db.send_friend_request(from_user_id, to_user_tag)
         if success:
             return jsonify({"message": message}), 200
         else:
@@ -234,13 +244,16 @@ def send_friend_request():
 @app.route("/api/friends/respond", methods=["POST"])
 def respond_friend_request():
     data = request.get_json(force=True, silent=True) or {}
-    requester_id = data.get("requester_id")
-    addressee_id = data.get("addressee_id")
+    requester = db.get_user_by_username_tag(data.get("requester_id"))
+    addressee = db.get_user_by_username_tag(data.get("addressee_id"))
     accept = data.get("accept")
 
-    if not all([requester_id, addressee_id]) or accept is None:
+    if not requester or not addressee or accept is None:
         app_logger.info(f"Received friend respond: {data}")
         return jsonify({"error": "requester_id, addressee_id and accept(boolean) are required"}), 400
+
+    requester_id = requester["id"]
+    addressee_id = addressee["id"]
 
     try:
         success, msg = db.respond_to_friend_request(requester_id, addressee_id, accept=bool(accept))

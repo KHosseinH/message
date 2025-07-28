@@ -8,9 +8,11 @@ from functools import partial
 SERVER_URL = "http://localhost:5000/api"  # Base API URL
 
 class FriendsPage(QWidget):
-    def __init__(self, user_id, parent=None):
+    def __init__(self,username, user_id, user_tag, parent=None):
         super().__init__(parent)
         self.user_id = user_id
+        self.user_tag = user_tag  # 👈 اضافه کن
+        self.username = username
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -144,7 +146,7 @@ class FriendsPage(QWidget):
         try:
             payload = {
                 "requester_id": requester_id,
-                "addressee_id": self.user_id,
+                "addressee_id": self.username + "#" +self.user_tag,
                 "accept": True
             }
             print("ACCEPT PAYLOAD:", payload)  # 👈 لاگ اضافه کن
@@ -235,12 +237,14 @@ class FriendsPage(QWidget):
         except Exception as e:
             raise RuntimeError(f"Failed to fetch friend requests: {e}")
 
-
-    def fetch_friend_requests(self):
+    def fetch_all_friends(self):
         try:
             response = requests.get(
-                f"{SERVER_URL}/friends/requests",
-                params={"user_id": self.user_id},
+                f"{SERVER_URL}/friends/all",
+                params={
+                    "user_id": self.user_id,
+                    "user_tag": self.user_tag,  # اضافه کردن تگ
+                },
                 timeout=5
             )
             response.raise_for_status()

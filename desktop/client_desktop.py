@@ -23,7 +23,6 @@ SERVER_URL = "http://localhost:5000/api" # Base API URL
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-
     client = ChatClient.ChatClient()
     client.show()
     sys.exit(app.exec())

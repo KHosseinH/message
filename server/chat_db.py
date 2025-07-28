@@ -249,14 +249,27 @@ class ChatDatabase:
             (user_id,), fetch_all=True)
         return friends1 + friends2
 
-    def get_pending_friend_requests(self, user_id):
+    def get_pending_friend_requests(self, user_identifier):
+        # اگر identifier به صورت tag بود، اول آی‌دی عددی رو بگیر
+        if isinstance(user_identifier, str) and "#" in user_identifier:
+            username, tag = user_identifier.split("#")
+            id_query = "SELECT id FROM users WHERE username = ? AND tag = ?"
+            result = self._execute_query(id_query, (username, tag), fetch_one=True)
+            if not result:
+                return []  # یا raise Exception("User not found")
+            user_id = result[0]
+        else:
+            user_id = user_identifier  # فرض بر اینه که عددی هست
+
         query = """
             SELECT f.id, u.username || '#' || u.tag AS from_user, f.requested_at
             FROM friends f
             JOIN users u ON f.requester_id = u.id
             WHERE f.addressee_id = ? AND f.status = 'pending'
         """
+        print(self._execute_query(query, (user_id,), fetch_all=True))
         return self._execute_query(query, (user_id,), fetch_all=True)
+
 
     # حذف دوست (قطع رابطه دوطرفه)
     def remove_friend(self, user_id, friend_id):
@@ -342,3 +355,10 @@ class ChatDatabase:
             WHERE f.status = 'accepted' AND u.last_activity >= ?
         """
         return self._execute_query(query, (user_id, user_id, threshold.strftime('%Y-%m-%d %H:%M:%S')), fetch_all=True)
+
+    def get_username_tag_by_id(self, user_id):
+        query = "SELECT username, tag FROM users WHERE id = ?"
+        result = self._execute_query(query, (user_id,), fetch_one=True)
+        if result:
+            return f"{result['username']}#{result['tag']}"
+        return None
