@@ -73,6 +73,17 @@ class ChatDatabase:
                 FOREIGN KEY(requester_id) REFERENCES users(id),
                 FOREIGN KEY(addressee_id) REFERENCES users(id)
             );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS private_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL,
+                receiver_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sender_id) REFERENCES users(id),
+                FOREIGN KEY (receiver_id) REFERENCES users(id)
+            );
             """
         ]
 
@@ -362,3 +373,60 @@ class ChatDatabase:
         if result:
             return f"{result['username']}#{result['tag']}"
         return None
+
+    def send_private_message(self, sender_id, receiver_id, message):
+        if not self.are_friends(sender_id, receiver_id):
+            return False, "You can only message your friends."
+        query = "INSERT INTO private_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)"
+        self._execute_query(query, (sender_id, receiver_id, message))
+        return True, "Message sent."
+    
+    def get_private_messages(self, user1_id, user2_id, limit=100):
+        query = """
+            SELECT 
+                pm.id,
+                u.username || '#' || u.tag AS sender,
+                pm.message,
+                pm.timestamp
+            FROM private_messages pm
+            JOIN users u ON pm.sender_id = u.id
+            WHERE 
+                (pm.sender_id = ? AND pm.receiver_id = ?)
+                OR
+                (pm.sender_id = ? AND pm.receiver_id = ?)
+            ORDER BY pm.timestamp ASC
+            LIMIT ?
+        """
+        return self._execute_query(query, (user1_id, user2_id, user2_id, user1_id, limit), fetch_all=True)
+
+    def get_last_messages_with_friends(self, user_id):
+        query = """
+            SELECT 
+                u.id as friend_id,
+                u.username || '#' || u.tag as friend,
+                pm.message,
+                pm.timestamp
+            FROM (
+                SELECT 
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY 
+                            CASE 
+                                WHEN sender_id = ? THEN receiver_id 
+                                ELSE sender_id 
+                            END 
+                        ORDER BY timestamp DESC
+                    ) as rn
+                FROM private_messages
+                WHERE sender_id = ? OR receiver_id = ?
+            ) pm
+            JOIN users u ON u.id = 
+                CASE 
+                    WHEN pm.sender_id = ? THEN pm.receiver_id
+                    ELSE pm.sender_id
+                END
+            WHERE rn = 1
+            ORDER BY timestamp DESC
+        """
+        return self._execute_query(query, (user_id, user_id, user_id, user_id), fetch_all=True)
+

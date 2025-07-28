@@ -204,7 +204,6 @@ def get_friend_requests_api():
 @app.route("/api/friends/request", methods=["POST"])
 def send_friend_request():
     data = request.get_json()
-    print(data)
     from_user_identifier = data.get("from_user_id")  # این رشته است، مثلاً "t1#1111"
     to_username_tag = data.get("to_identifier")      # این هم رشته است مثل "t3#1111"
 
@@ -229,7 +228,6 @@ def send_friend_request():
         return jsonify({"message": "You cannot add yourself as a friend."}), 400
 
     to_user_tag = db.get_username_tag_by_id(to_user_id)
-    print(self.to_user_tag)
 
     try:
         success, message = db.send_friend_request(from_user_id, to_user_tag)
@@ -310,6 +308,60 @@ def remove_friend():
         app_logger.error(f"Error removing friend {friend_id} for user {user_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+# ------------------------ Private Messaging API ------------------------
+
+@app.route("/api/private/send", methods=["POST"])
+def send_private_message_api():
+    data = request.get_json(force=True, silent=True) or {}
+    sender_id = data.get("sender_id")
+    receiver_id = data.get("receiver_id")
+    message = data.get("message")
+
+    if not sender_id or not receiver_id or not message:
+        return jsonify({"error": "sender_id, receiver_id and message are required"}), 400
+
+    try:
+        success, msg = db.send_private_message(sender_id, receiver_id, message)
+        if success:
+            db.update_activity(sender_id)
+            return jsonify({"message": msg}), 200
+        else:
+            return jsonify({"error": msg}), 403
+    except Exception as e:
+        app_logger.error(f"Error sending private message: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/private/messages", methods=["GET"])
+def get_private_messages_api():
+    user1_id = request.args.get("user1_id", type=int)
+    user2_id = request.args.get("user2_id", type=int)
+    limit = request.args.get("limit", default=100, type=int)
+
+    if not user1_id or not user2_id:
+        return jsonify({"error": "user1_id and user2_id are required"}), 400
+
+    try:
+        messages = db.get_private_messages(user1_id, user2_id, limit=limit)
+        return jsonify(messages), 200
+    except Exception as e:
+        app_logger.error(f"Error fetching private messages: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/private/last", methods=["GET"])
+def get_last_messages_api():
+    user_id = request.args.get("user_id", type=int)
+
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    try:
+        convos = db.get_last_messages_with_friends(user_id)
+        return jsonify(convos), 200
+    except Exception as e:
+        app_logger.error(f"Error getting last private messages: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 # ----------------- Admin Panel GUI -----------------
 

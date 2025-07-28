@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
 )
 import requests
 from functools import partial
+from PrivateChat import PrivateChatDialog
 
 SERVER_URL = "http://localhost:5000/api"  # Base API URL
 
@@ -79,8 +80,31 @@ class FriendsPage(QWidget):
                 self.online_list.addItem("No online friends.")
             else:
                 for f in friends:
-                    # فرض می‌کنیم f شامل username و since هست
-                    self.online_list.addItem(f"{f.get('username', 'Unknown')} 🤝 | Since: {f.get('since', 'N/A')}")
+                    friend_username = f.get('username', 'Unknown')
+                    friend_since = f.get('since', 'N/A')
+                    friend_id = f.get('id')  # فرض می‌کنیم شناسه فرند اینجاست
+
+                    # ویجت سفارشی هر ردیف
+                    item_widget = QWidget()
+                    layout = QHBoxLayout(item_widget)
+                    layout.setContentsMargins(5, 0, 5, 0)
+
+                    label = QLabel(f"{friend_username} 🤝 | Since: {friend_since}")
+                    btn_chat = QPushButton("Chat")
+                    btn_chat.setStyleSheet("background-color: lightblue;")
+
+                    # وصل کردن دکمه چت به تابع باز کردن صفحه چت با آن دوست
+                    btn_chat.clicked.connect(partial(self.open_private_chat, friend_id, friend_username))
+
+                    layout.addWidget(label)
+                    layout.addStretch()
+                    layout.addWidget(btn_chat)
+
+                    item = QListWidgetItem()
+                    item.setSizeHint(item_widget.sizeHint())
+
+                    self.online_list.addItem(item)
+                    self.online_list.setItemWidget(item, item_widget)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load online friends:\n{e}")
 
@@ -283,3 +307,7 @@ class FriendsPage(QWidget):
 
         except Exception as e:
             return False, f"Unexpected error: {e}"
+
+    def open_private_chat(self, friend_id, friend_username):
+        dialog = PrivateChatDialog(self.user_id, friend_id, friend_username, self)
+        dialog.exec()
