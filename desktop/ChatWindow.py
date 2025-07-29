@@ -154,7 +154,7 @@ class ChatWindow(QWidget):
             sender_name = msg.get('sender', 'Unknown')
             message_text = html.escape(msg.get('message', ''))
 
-            if msg.get('sender_id') == self.parent_app.user_id:
+            if sender_name == self.parent_app.username + "#" + self.parent_app.tag:
                 line = (f'<div align="right">'
                         f'<b style="color:#4CAF50;">You:</b> {message_text}'
                         f'<br><span style="font-size:10px;color:#888;">{timestamp}</span>'
