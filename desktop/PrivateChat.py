@@ -1,74 +1,75 @@
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox
-)
-import requests
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel
+from PyQt6.QtCore import Qt, pyqtSignal
 
-SERVER_URL = "http://localhost:5000/api"  # آدرس سرور
+class PrivateChatWidget(QWidget):
+    # سیگنال برای اطلاع به برنامه که پیام جدید ارسال شده (اختیاری)
+    message_sent = pyqtSignal(dict)
 
-class PrivateChatDialog(QDialog):
-    def __init__(self, user_id, friend_id, friend_username, parent=None):
+    def __init__(self, user_id, friend_id, friend_username, network_thread, parent=None):
         super().__init__(parent)
+
         self.user_id = user_id
         self.friend_id = friend_id
         self.friend_username = friend_username
+        self.network_thread = network_thread
 
-        self.setWindowTitle(f"Chat with {friend_username}")
-        self.resize(400, 500)
+        layout = QVBoxLayout(self)
 
-        self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
+        self.label = QLabel(f"Private chat with {friend_username}")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.label)
 
-        self.chat_history = QTextEdit()
-        self.chat_history.setReadOnly(True)
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+        layout.addWidget(self.chat_display)
 
-        self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("Type your message...")
+        self.input = QLineEdit()
+        layout.addWidget(self.input)
 
-        self.send_button = QPushButton("Send")
-        self.send_button.clicked.connect(self.send_message)
+        self.send_btn = QPushButton("Send")
+        layout.addWidget(self.send_btn)
 
-        self.layout.addWidget(QLabel(f"Chat with {friend_username}"))
-        self.layout.addWidget(self.chat_history)
-        self.layout.addWidget(self.message_input)
-        self.layout.addWidget(self.send_button)
+        self.send_btn.clicked.connect(self.send_message)
 
-        self.load_messages()
+        self.load_chat_history()
 
-    def load_messages(self):
+    def load_chat_history(self):
+        # نمونه درخواست تاریخچه پیام (باید متد ارسال در network_thread اینجا کار کنه)
+        payload = {
+            "action": "get_chat_history",
+            "user_id": self.user_id,
+            "friend_id": self.friend_id
+        }
         try:
-            response = requests.get(
-                f"{SERVER_URL}/private/messages",
-                params={"user1_id": self.user_id, "user2_id": self.friend_id},
-                timeout=5
-            )
-            response.raise_for_status()
-            messages = response.json()
-            self.chat_history.clear()
-            for msg in messages:
-                sender = msg.get("sender", "unknown")
-                text = msg.get("message", "")
-                timestamp = msg.get("timestamp", "")
-                self.chat_history.append(f"[{timestamp}] {sender}: {text}")
+            history = self.network_thread.send(payload)  # فرض که send هم پاسخ میده
+            for msg in history:
+                sender = "You" if msg['from_id'] == self.user_id else self.friend_username
+                self.chat_display.append(f"{sender}: {msg['message']}")
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load messages:\n{e}")
+            self.chat_display.append("Failed to load chat history.")
 
     def send_message(self):
-        text = self.message_input.text().strip()
-        if not text:
+        message = self.input.text().strip()
+        if not message:
             return
-        try:
-            payload = {
-                "sender_id": self.user_id,
-                "receiver_id": self.friend_id,
-                "message": text
-            }
-            response = requests.post(
-                f"{SERVER_URL}/private/send",
-                json=payload,
-                timeout=5
-            )
-            response.raise_for_status()
-            self.message_input.clear()
-            self.load_messages()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to send message:\n{e}")
+
+        payload = {
+            "from_user_id": self.user_id,
+            "to_user_id": self.friend_id,
+            "message": message
+        }
+
+        self.thread = NetworkThread("messages/send", data=payload, method="POST")
+        self.thread.worker.data_received.connect(self.on_message_sent)
+        self.thread.worker.error_occurred.connect(self.on_error)
+        self.thread.start()
+
+    def on_message_sent(self, data):
+        self.chat_display.append(f"You: {self.input.text()}")
+        self.input.clear()
+
+    def on_error(self, error_msg):
+        QMessageBox.critical(self, "Error Sending Message", error_msg)
+
+    def receive_message(self, message):
+        self.chat_display.append(f"{self.friend_username}: {message}")

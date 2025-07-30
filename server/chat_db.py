@@ -248,13 +248,13 @@ class ChatDatabase:
     def get_friends(self, user_id):
         # دوستانی که user_id درخواست داده و قبول شده
         friends1 = self._execute_query(
-            """SELECT u.id, u.username, u.tag FROM friends f
+            """SELECT u.id, u.username, u.tag, f.responded_at as friended_at FROM friends f
             JOIN users u ON f.addressee_id = u.id
             WHERE f.requester_id = ? AND f.status = 'accepted'""",
             (user_id,), fetch_all=True)
         # دوستانی که به user_id درخواست داده و قبول شده
         friends2 = self._execute_query(
-            """SELECT u.id, u.username, u.tag FROM friends f
+            """SELECT u.id, u.username, u.tag, f.responded_at as friended_at FROM friends f
             JOIN users u ON f.requester_id = u.id
             WHERE f.addressee_id = ? AND f.status = 'accepted'""",
             (user_id,), fetch_all=True)

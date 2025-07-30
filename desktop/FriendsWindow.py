@@ -1,25 +1,36 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QPushButton, QMessageBox,
-    QTabWidget, QLabel, QLineEdit, QHBoxLayout, QListWidgetItem
+    QTabWidget, QLabel, QLineEdit, QHBoxLayout, QListWidgetItem, QStackedLayout  
 )
 import requests
 from functools import partial
-from PrivateChat import PrivateChatDialog
+from PrivateChat import PrivateChatWidget  # جدید
+from NetworkThread import NetworkThread
 
 SERVER_URL = "http://localhost:5000/api"  # Base API URL
 
 class FriendsPage(QWidget):
     def __init__(self,username, user_id, user_tag, parent=None):
+
         super().__init__(parent)
         self.user_id = user_id
         self.user_tag = user_tag 
         self.username = username
+        self.NetworkThread = NetworkThread
+        self.main_layout = QVBoxLayout(self)
+        self.setLayout(self.main_layout)
 
-        self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
+        self.stack = QStackedLayout()
+        self.main_layout.addLayout(self.stack)
 
+        self.tabs_widget = QWidget()
+        self.tabs_layout = QVBoxLayout(self.tabs_widget)
         self.tabs = QTabWidget()
-        self.layout.addWidget(self.tabs)
+        self.tabs_layout.addWidget(self.tabs)
+        self.tabs_widget.setLayout(self.tabs_layout)
+
+        self.stack.addWidget(self.tabs_widget)
+
 
         # --- Online Friends Tab ---
         self.online_tab = QWidget()
@@ -116,10 +127,9 @@ class FriendsPage(QWidget):
                 self.all_list.addItem("No friends found.")
             else:
                 for f in friends:
-                    # فرض می‌کنیم f شامل username، friend_name و since هست
-                    user_name = f.get('username', 'Unknown')
-                    friend_name = f.get('friend_name', 'Unknown')
-                    since = f.get('since', 'N/A')
+                    user_name = self.username
+                    friend_name = f.get('username', 'Unknown')
+                    since = f.get('friended_at', 'N/A')
                     self.all_list.addItem(f"{user_name} 🤝 {friend_name} | Since: {since}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load all friends:\n{e}")
@@ -309,5 +319,22 @@ class FriendsPage(QWidget):
             return False, f"Unexpected error: {e}"
 
     def open_private_chat(self, friend_id, friend_username):
-        dialog = PrivateChatDialog(self.user_id, friend_id, friend_username, self)
-        dialog.exec()
+        self.private_chat = PrivateChatWidget(
+            self.user_id,
+            friend_id,
+            friend_username,
+            self.NetworkThread
+        )
+        self.stack.addWidget(self.private_chat)
+        self.stack.setCurrentWidget(self.private_chat)
+
+        # دکمه برگشت به tabs اضافه کن
+        back_button = QPushButton("← Back to Friends")
+        back_button.setStyleSheet("background-color: #f44336; color: white; padding: 4px 10px;")
+        back_button.clicked.connect(self.back_to_friends)
+        self.private_chat.layout().insertWidget(0, back_button)
+
+    def back_to_friends(self):
+        self.stack.setCurrentWidget(self.tabs_widget)
+        self.stack.removeWidget(self.private_chat)
+        self.private_chat.deleteLater()
