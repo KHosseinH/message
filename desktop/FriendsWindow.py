@@ -12,7 +12,7 @@ class FriendsPage(QWidget):
     def __init__(self,username, user_id, user_tag, parent=None):
         super().__init__(parent)
         self.user_id = user_id
-        self.user_tag = user_tag  # 👈 اضافه کن
+        self.user_tag = user_tag 
         self.username = username
 
         self.layout = QVBoxLayout()
