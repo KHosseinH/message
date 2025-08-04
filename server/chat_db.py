@@ -394,10 +394,12 @@ class ChatDatabase:
                 (pm.sender_id = ? AND pm.receiver_id = ?)
                 OR
                 (pm.sender_id = ? AND pm.receiver_id = ?)
-            ORDER BY pm.timestamp ASC
+            ORDER BY pm.timestamp DESC
             LIMIT ?
         """
-        return self._execute_query(query, (user1_id, user2_id, user2_id, user1_id, limit), fetch_all=True)
+        rows = self._execute_query(query, (user1_id, user2_id, user2_id, user1_id, limit), fetch_all=True)
+        # چون پیام‌ها رو برعکس گرفتیم، حالا برگردون به ترتیب درست
+        return rows[::-1]
 
     def get_last_messages_with_friends(self, user_id):
         query = """

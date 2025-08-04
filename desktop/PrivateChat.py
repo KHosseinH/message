@@ -1,17 +1,21 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox
+)
+from PyQt6.QtCore import Qt
+import requests
+
+SERVER_URL = "http://localhost:5000/api"
 
 class PrivateChatWidget(QWidget):
-    # سیگنال برای اطلاع به برنامه که پیام جدید ارسال شده (اختیاری)
-    message_sent = pyqtSignal(dict)
-
-    def __init__(self, user_id, friend_id, friend_username, network_thread, parent=None):
+    def __init__(self, user_id, friend_id, friend_username, parent=None):
         super().__init__(parent)
 
         self.user_id = user_id
         self.friend_id = friend_id
         self.friend_username = friend_username
-        self.network_thread = network_thread
+
+        self.username = getattr(parent, "username", "Unknown")
+        self.tag = getattr(parent, "tag", "0000")
 
         layout = QVBoxLayout(self)
 
@@ -34,42 +38,48 @@ class PrivateChatWidget(QWidget):
         self.load_chat_history()
 
     def load_chat_history(self):
-        # نمونه درخواست تاریخچه پیام (باید متد ارسال در network_thread اینجا کار کنه)
-        payload = {
-            "action": "get_chat_history",
-            "user_id": self.user_id,
-            "friend_id": self.friend_id
-        }
         try:
-            history = self.network_thread.send(payload)  # فرض که send هم پاسخ میده
+            params = {
+                "user1_id": self.user_id,
+                "user2_id": self.friend_id,
+                "limit": 100  # می‌تونی اینو تنظیم کنی
+            }
+            response = requests.get(f"{SERVER_URL}/private/messages", params=params, timeout=5)
+            response.raise_for_status()
+            history = response.json()
+            print(history)
+
+            self.chat_display.clear()
             for msg in history:
-                sender = "You" if msg['from_id'] == self.user_id else self.friend_username
+                sender = "You" if msg['sender'] == self.username + "#" + self.tag else self.friend_username
                 self.chat_display.append(f"{sender}: {msg['message']}")
         except Exception as e:
-            self.chat_display.append("Failed to load chat history.")
+            QMessageBox.critical(self, "Error", f"Failed to load chat history:\n{e}")
 
     def send_message(self):
         message = self.input.text().strip()
         if not message:
             return
 
-        payload = {
-            "from_user_id": self.user_id,
-            "to_user_id": self.friend_id,
-            "message": message
-        }
+        try:
+            payload = {
+                "sender_id": self.user_id,
+                "receiver_id": self.friend_id,
+                "message": message
+            }
+            response = requests.post(f"{SERVER_URL}/private/send", json=payload, timeout=5)
+            response.raise_for_status()
 
-        self.thread = NetworkThread("messages/send", data=payload, method="POST")
-        self.thread.worker.data_received.connect(self.on_message_sent)
-        self.thread.worker.error_occurred.connect(self.on_error)
-        self.thread.start()
+            # اگر سرور تایید کرد، پیام را در چت نمایش بده
+            self.chat_display.append(f"You: {message}")
+            self.input.clear()
 
-    def on_message_sent(self, data):
-        self.chat_display.append(f"You: {self.input.text()}")
-        self.input.clear()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                err_msg = response.json().get("error", str(http_err))
+            except Exception:
+                err_msg = str(http_err)
+            QMessageBox.warning(self, "Send Failed", f"HTTP error: {err_msg}")
 
-    def on_error(self, error_msg):
-        QMessageBox.critical(self, "Error Sending Message", error_msg)
-
-    def receive_message(self, message):
-        self.chat_display.append(f"{self.friend_username}: {message}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to send message:\n{e}")

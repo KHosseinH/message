@@ -320,20 +320,19 @@ class FriendsPage(QWidget):
 
     def open_private_chat(self, friend_id, friend_username):
         self.private_chat = PrivateChatWidget(
-            self.user_id,
-            friend_id,
-            friend_username,
-            self.NetworkThread
+            parent=self,
+            user_id=self.user_id,
+            friend_id=friend_id,
+            friend_username=friend_username,
         )
         self.stack.addWidget(self.private_chat)
         self.stack.setCurrentWidget(self.private_chat)
 
-        # دکمه برگشت به tabs اضافه کن
         back_button = QPushButton("← Back to Friends")
         back_button.setStyleSheet("background-color: #f44336; color: white; padding: 4px 10px;")
         back_button.clicked.connect(self.back_to_friends)
         self.private_chat.layout().insertWidget(0, back_button)
-
+        
     def back_to_friends(self):
         self.stack.setCurrentWidget(self.tabs_widget)
         self.stack.removeWidget(self.private_chat)
